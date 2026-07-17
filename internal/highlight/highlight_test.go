@@ -102,6 +102,9 @@ func TestStylesheetCSS(t *testing.T) {
 		t.Fatal("StylesheetCSS is empty")
 	}
 	// The stylesheet must define the chroma classes the HTML references.
+	if !strings.Contains(css, "@media (prefers-color-scheme: dark)") {
+		t.Error("stylesheet should include a dark-theme layer")
+	}
 	if !strings.Contains(css, ".chroma") {
 		t.Errorf("CSS lacks a chroma class selector (.chroma):\n%s", css)
 	}

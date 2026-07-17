@@ -28,6 +28,11 @@ import (
 // reads well for embedded code snippets.
 const DefaultStyle = "github"
 
+// DefaultDarkStyle is layered under @media (prefers-color-scheme: dark) so the
+// code follows the viewer's theme instead of showing light-theme token colors on
+// a dark ground.
+const DefaultDarkStyle = "github-dark"
+
 // lineIDPrefix prefixes the per-line anchor id (e.g. id="L12"). The viewer
 // resolves a 1-based line number N to the element with id "L"+N.
 const lineIDPrefix = "L"
@@ -64,17 +69,20 @@ type Result struct {
 // and StylesheetCSS, which use the DefaultStyle.
 type Highlighter struct {
 	style     *chroma.Style
+	darkStyle *chroma.Style
 	formatter *html.Formatter
 }
 
 // defaultHighlighter is used by the package-level Highlight and StylesheetCSS.
 var defaultHighlighter = New(DefaultStyle)
 
-// New returns a Highlighter for the named chroma style. An unknown style name
-// falls back to chroma's built-in default, so New never fails.
+// New returns a Highlighter for the named chroma style, paired with the default
+// dark style for the prefers-color-scheme layer. An unknown style name falls
+// back to chroma's built-in default, so New never fails.
 func New(styleName string) *Highlighter {
 	return &Highlighter{
-		style: styles.Get(styleName),
+		style:     styles.Get(styleName),
+		darkStyle: styles.Get(DefaultDarkStyle),
 		formatter: html.New(
 			// Class-based output: styling comes from the shared
 			// stylesheet (StylesheetCSS), not per-span inline styles.
@@ -115,14 +123,22 @@ func (h *Highlighter) Highlight(source, language string) (Result, error) {
 
 // StylesheetCSS returns the shared stylesheet for this Highlighter's style: the
 // chroma token classes (.chroma, .k, .line, …) that the HTML from Highlight
-// references. The result is non-empty.
+// references. It layers the dark style under @media (prefers-color-scheme: dark)
+// so the code follows the viewer's theme. The result is non-empty.
 func (h *Highlighter) StylesheetCSS() string {
-	var buf strings.Builder
-	if err := h.formatter.WriteCSS(&buf, h.style); err != nil {
-		// WriteCSS only fails on writer errors; a strings.Builder never
-		// returns one, so this is unreachable in practice.
-		return ""
+	light := writeStyleCSS(h.formatter, h.style)
+	if h.darkStyle == nil {
+		return light
 	}
+	dark := writeStyleCSS(h.formatter, h.darkStyle)
+	return light + "\n@media (prefers-color-scheme: dark) {\n" + dark + "\n}\n"
+}
+
+// writeStyleCSS renders one chroma style's class-based CSS via the formatter.
+func writeStyleCSS(f *html.Formatter, style *chroma.Style) string {
+	var buf strings.Builder
+	// WriteCSS only fails on writer errors; a strings.Builder never returns one.
+	_ = f.WriteCSS(&buf, style)
 	return buf.String()
 }
 
