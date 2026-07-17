@@ -1,0 +1,11 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Entry point for the tds Ruby provider. Speaks the tds provider protocol v1
+# over stdio; the tds core launches this and drives it.
+
+$LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
+
+require "tds/provider"
+
+TDS::Provider.new.run

@@ -52,3 +52,18 @@ jobs:
           GOOS: ${{ matrix.target.goos }}
           GOARCH: ${{ matrix.target.goarch }}
         run: go build -o /dev/null .
+
+  ruby-provider:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: providers/ruby
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: providers/ruby
+      - name: Test
+        run: bundle exec rake test

@@ -5,6 +5,11 @@
 *.out
 coverage.*
 
+# Ruby provider (gem: lockfile + vendored bundle are not tracked)
+providers/ruby/Gemfile.lock
+providers/ruby/vendor/
+providers/ruby/.bundle/
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
