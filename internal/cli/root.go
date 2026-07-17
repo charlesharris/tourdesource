@@ -37,7 +37,7 @@ See docs/design.md and docs/implementation-plan.md for the full picture.`,
 		newMapCmd(),
 		newStageCmd("analyze", "Run language tooling into normalized findings"),
 		newStageCmd("draft", "Generate an AI-assisted tour draft to curate"),
-		newStageCmd("build", "Compile a tour into a static bundle"),
+		newBuildCmd(),
 		newStageCmd("check", "Report tour anchor drift against HEAD"),
 	)
 

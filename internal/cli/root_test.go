@@ -30,8 +30,8 @@ func TestHelpListsPipelineStages(t *testing.T) {
 }
 
 func TestStageStubsReturnNotImplemented(t *testing.T) {
-	// map is implemented (TDS-13); the rest are still stubs.
-	for _, stage := range []string{"analyze", "draft", "build", "check"} {
+	// map (TDS-13) and build (TDS-22) are implemented; the rest are still stubs.
+	for _, stage := range []string{"analyze", "draft", "check"} {
 		if _, err := runCmd(stage); err != errNotImplemented {
 			t.Errorf("stage %q: got err %v, want errNotImplemented", stage, err)
 		}
