@@ -1,4 +1,10 @@
 
+# Go
+/bin/
+*.test
+*.out
+coverage.*
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
