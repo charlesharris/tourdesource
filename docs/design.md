@@ -206,10 +206,11 @@ Produces `*.tour.md` drafts for a human to curate. This is the only AI stage.
 **Orchestration (auth-preserving, file-mediated):**
 
 1. `tds` ensures a tmux pane running `claude --dangerously-skip-permissions` in the repo dir (create or attach). This keeps generation on the author's **Claude subscription** — no API key.
-2. `tds` writes a prompt to a file (e.g. `.tds/draft/PROMPT.md`) and any context it wants pinned.
-3. `tds` sends Claude a short instruction via `tmux send-keys`: *"Read `.tds/draft/PROMPT.md`, write your answer to `.tds/draft/OUTPUT.json`, then print `DONE-<nonce>`."*
-4. `tds` polls: `capture-pane` for the `DONE-<nonce>` sentinel **and** existence/completeness of `OUTPUT.json`.
-5. Data crosses the boundary **through the filesystem**, never by scraping the TUI. `--dangerously-skip-permissions` lets Claude read/write those files without prompts. tmux is purely the transport that preserves auth and gives the author an **observable** session they can watch or intervene in.
+2. **Wait for readiness.** `tds` polls `capture-pane` for the TUI's readiness marker before sending anything — keystrokes typed before the input box exists are silently lost (spike TDS-2).
+3. `tds` writes a prompt to a file (e.g. `.tds/draft/PROMPT.md`) and any context it wants pinned.
+4. `tds` sends Claude a short instruction via `tmux send-keys`: *"Read `.tds/draft/PROMPT.md`, write your answer to `.tds/draft/OUTPUT.json`, then create `.tds/draft/<nonce>.done`."*
+5. **Completion is detected on the filesystem, not the pane:** `tds` polls for the `<nonce>.done` marker (written after the payload), then reads/parses `OUTPUT.json`. Scraping Claude's alternate-screen TUI for a printed sentinel is fragile; the `.done` marker is TUI-agnostic and avoids reading a half-written file (spike TDS-2).
+6. Data crosses the boundary **through the filesystem**, never by scraping the TUI. `--dangerously-skip-permissions` lets Claude read/write those files without prompts. tmux is purely the input transport that preserves auth and gives the author an **observable** session they can watch or intervene in.
 
 Rationale for not using `claude -p`: the tmux route is more robust and observable and sidesteps any billing/credential ambiguity; the file-mediated contract removes TUI-parsing fragility.
 
@@ -375,7 +376,7 @@ A **view** is `{ id, title, kind, provenance, findings }` where `kind ∈ {annot
 
 ## 12. Risks and open questions
 
-- **tmux orchestration robustness** — completion detection, timeouts, partial writes, session reuse/cleanup, error surfacing. Needs a hardened readiness protocol (sentinel + file-complete check + timeout/retry). *Prototype early.*
+- **tmux orchestration robustness** — *Core mechanism validated by spike TDS-2* (10/10 mock runs + a real-Claude round trip): wait for a readiness marker before sending; detect completion via a filesystem `.done` marker, not the pane. Remaining hardening (TDS-38): timeouts/retries, dead-pane and stuck-model recovery, session reuse to amortize startup, cleanup on failure.
 - **Symbol-path normalization across languages** — one anchor grammar that reads naturally in Ruby and JS/TS, mapped inside each provider. *Spike during the first provider.*
 - **Provider protocol design** — getting the `capabilities`/`structure`/`analyze` contract, version negotiation, and error/partial-result semantics right up front; it's the seam everything else hangs on. *Prototype the Ruby provider against a real Rails app early.*
 - **Provider distribution & runtimes** — native providers need Ruby / Node present; the Go core spawns them as subprocesses. Fine for Rails+React repos (both already installed), but the install story (gem + npm package + binary) needs to be smooth, with clear messaging when a provider is missing (falls back to tree-sitter).
