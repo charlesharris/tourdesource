@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "tourdesource",
+  "project_id": "295ff350-b75c-42dc-a5f6-168818691d56"
+}
