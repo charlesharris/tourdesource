@@ -57,7 +57,7 @@ Work is organized into **milestones** (→ beads epics) made of **tasks** (→ b
 | TDS-8 | **Core: file walk + language detection** — walk respecting `.gitignore`; classify files by language; correct tags on a Rails+React repo. | feat | S | TDS-1 |
 | TDS-9 | **Core: git signals** — churn, age, last-touched, primary authors via git; values match `git log` spot checks. | feat | S | TDS-1 |
 | TDS-10 | **Ruby provider: `structure`** — prism-based symbols (classes/modules/methods) with qualified paths, ranges, normalized-body hash; imports; Rails entrypoints (routes/controllers/models/jobs); verified on a real Rails app. | feat | L | TDS-5 |
-| TDS-11 | **Fallback provider: `structure`** — in-core tree-sitter provider yields symbols where a grammar exists, degrades to none otherwise, never errors. | feat | M | TDS-6 |
+| TDS-11 | **Fallback provider: `structure`** — *separate* tree-sitter fallback-provider binary (CGO; kept out of the CGO-free core per spike TDS-4) yields symbols where a grammar exists, degrades to line-range anchors otherwise, never errors. | feat | M | TDS-6 |
 | TDS-12 | **Anchor resolution + Ruby normalization** — resolve `path::Symbol` → concrete range against the store; symbol-path normalization; line-range fallback when unresolved (flagged). | feat | M | TDS-7, TDS-10 |
 | TDS-13 | **`tds map` command** — wire walk + git + providers → store + JSON; on a Rails app produces a populated `map.sqlite` + `map.json`. | feat | M | TDS-6, TDS-7, TDS-8, TDS-9, TDS-10, TDS-11 |
 

@@ -309,7 +309,7 @@ The core **version-negotiates** via `capabilities`, resolves each finding to a s
 
 ### 9.3 Provider discovery & distribution
 
-- **Built-in fallback** — a tree-sitter provider compiled into the core. Gives symbols where a grammar exists and line-range anchors otherwise, so `tds` **never refuses a repo**.
+- **Tree-sitter fallback provider** — a *separate binary* (not compiled into the core), built per-OS. Gives symbols where a grammar exists and line-range anchors otherwise, so `tds` **never refuses a repo**. It lives outside the core because tree-sitter requires CGO, which would forfeit the CGO-free core and easy cross-compilation (spike TDS-4). Shipped alongside the core binary and discovered like any other provider; if it is somehow absent, unsupported languages degrade to line-range anchors only.
 - **Native providers** — discovered on `PATH` (e.g. `tds-provider-ruby`, `tds-provider-js`) or declared in `tds.toml`. Installed via the language's own package manager (a gem; an npm package). The core runs whichever it finds; absent a native provider, a language degrades to the fallback.
 - **v1 native providers:** **Ruby/Rails** (gem: prism + rubocop/brakeman/sorbet/simplecov/flog) and **JS/React** (npm: TS compiler + react-docgen + eslint/tsc/coverage/complexity). A Rails+React repo already has Ruby + Node, so both providers install cleanly with no extra runtimes.
 
@@ -335,10 +335,10 @@ A **view** is `{ id, title, kind, provenance, findings }` where `kind ∈ {annot
 
 ## 10. Technology choices
 
-- **Core:** Go — single static binary, cross-compiles, embeds the viewer assets (`go:embed`); best distribution story for a shareable CLI. Owns dispatch, store, draft/tmux, build, bundle, tour format, anchor resolution.
+- **Core:** Go — single **CGO-free** static binary, cross-compiles trivially (validated in spike TDS-4), embeds the viewer assets (`go:embed`); best distribution story for a shareable CLI. Owns dispatch, store, draft/tmux, build, bundle, tour format, anchor resolution.
 - **Providers:** separate programs behind the JSON protocol (§9). v1 native providers — **Ruby** (gem: prism + rubocop/brakeman/sorbet/simplecov/flog) and **JS/React** (npm: TS compiler + react-docgen + eslint/tsc/coverage). Discovered on `PATH` / via `tds.toml`.
-- **Fallback parsing:** tree-sitter via Go bindings, compiled into the core as the built-in fallback provider.
-- **Store:** SQLite (via a pure-Go driver, e.g. `modernc.org/sqlite`, so the binary stays CGO-free and static) with JSON export. Holds symbols, imports, git signals, and analyzer findings.
+- **Fallback parsing:** tree-sitter (Go bindings, **CGO**) lives in the **separate fallback-provider binary**, built per-OS — kept out of the core so the core stays CGO-free (spike TDS-4).
+- **Store:** SQLite via the pure-Go `modernc.org/sqlite` driver (keeps the core CGO-free), with JSON export. Holds symbols, imports, git signals, and analyzer findings.
 - **AI transport:** `tmux` driving `claude --dangerously-skip-permissions`, file-mediated I/O.
 - **Viewer:** vanilla JS + minimal CSS, no framework, no CDN — everything inlined/self-contained so bundles are portable and CSP-safe.
 - **Build-time highlighting:** a Go highlighter (e.g. chroma) compiled into the core, independent of the providers.
@@ -379,7 +379,7 @@ A **view** is `{ id, title, kind, provenance, findings }` where `kind ∈ {annot
 - **Symbol-path normalization across languages** — one anchor grammar that reads naturally in Ruby and JS/TS, mapped inside each provider. *Spike during the first provider.*
 - **Provider protocol design** — getting the `capabilities`/`structure`/`analyze` contract, version negotiation, and error/partial-result semantics right up front; it's the seam everything else hangs on. *Prototype the Ruby provider against a real Rails app early.*
 - **Provider distribution & runtimes** — native providers need Ruby / Node present; the Go core spawns them as subprocesses. Fine for Rails+React repos (both already installed), but the install story (gem + npm package + binary) needs to be smooth, with clear messaging when a provider is missing (falls back to tree-sitter).
-- **Cross-language build in one binary** — CGO-free SQLite + tree-sitter Go bindings must coexist in a static build across platforms. *Validate the build matrix early.*
+- **Cross-language build** — *Resolved by spike TDS-4.* tree-sitter requires CGO, so it is split into a separate fallback-provider binary (built per-OS); the core uses pure-Go `modernc.org/sqlite` and stays CGO-free and cross-compilable. Remaining work is packaging the per-OS fallback-provider binaries alongside the core.
 - **Bundle size on large repos** — whole-repo embed + lazy-load should hold, but needs a real measurement on a big repo; may need blob compression / on-demand fetch tuning.
 - **Draft quality variance** — how good is the two-pass draft *actually*? The template mitigates but doesn't guarantee. *Dogfood on a real Rails repo first.*
 - **Focus-range highlighting inside a symbol** — substring vs. sub-line-range resolution rules TBD.
