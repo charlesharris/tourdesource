@@ -1,0 +1,16 @@
+{
+  "id": 1,
+  "ok": true,
+  "result": {
+    "protocol": "1.0.0",
+    "provider": "tds-provider-ruby",
+    "provider_version": "0.1.0",
+    "languages": ["ruby"],
+    "operations": ["capabilities", "structure", "analyze"],
+    "analyzers": [
+      { "name": "rubocop", "tool": "rubocop", "available": true, "tool_version": "1.65.0", "views": ["annotations", "panel"] },
+      { "name": "brakeman", "tool": "brakeman", "available": false, "views": ["annotations", "panel"] },
+      { "name": "simplecov", "tool": "simplecov", "available": true, "tool_version": "0.22.0", "views": ["heatmap", "badge"] }
+    ]
+  }
+}

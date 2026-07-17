@@ -1,0 +1,5 @@
+{
+  "id": 1,
+  "op": "capabilities",
+  "params": { "core_protocols": ["1"] }
+}

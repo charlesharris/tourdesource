@@ -1,0 +1,13 @@
+{
+  "id": 3,
+  "ok": true,
+  "result": {
+    "findings": [
+      { "path": "app/models/invoice.rb", "start_line": 7, "end_line": 7, "symbol": "Invoice#finalize", "severity": "warning", "rule": "Style/GuardClause", "message": "Use a guard clause instead of wrapping the code inside a conditional expression.", "url": "https://docs.rubocop.org/rubocop/cops_style.html#styleguardclause", "tool": "rubocop", "tool_version": "1.65.0", "view": "annotations" },
+      { "path": "app/models/invoice.rb", "start_line": 1, "end_line": 18, "symbol": "Invoice", "severity": "info", "rule": "coverage.line", "message": "62% line coverage", "tool": "simplecov", "tool_version": "0.22.0", "view": "heatmap", "value": 62.0 }
+    ],
+    "analyzer_errors": [
+      { "analyzer": "brakeman", "message": "brakeman not installed" }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "id": 2,
+  "op": "structure",
+  "params": {
+    "root": "/repo",
+    "commit": "0c2cdd9",
+    "files": ["app/models/invoice.rb", "app/controllers/webhooks_controller.rb"]
+  }
+}

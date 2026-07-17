@@ -1,0 +1,20 @@
+{
+  "id": 2,
+  "ok": true,
+  "result": {
+    "symbols": [
+      { "path": "app/models/invoice.rb", "kind": "class", "name": "Invoice", "symbol": "Invoice", "start_line": 2, "end_line": 18, "body_hash": "sha256:abc123" },
+      { "path": "app/models/invoice.rb", "kind": "method", "name": "finalize", "symbol": "Invoice#finalize", "start_line": 6, "end_line": 9 },
+      { "path": "app/models/invoice.rb", "kind": "method", "name": "overdue", "symbol": "Invoice.overdue", "start_line": 15, "end_line": 17 }
+    ],
+    "imports": [
+      { "path": "app/controllers/webhooks_controller.rb", "target": "app/models/invoice.rb", "kind": "reference" }
+    ],
+    "entrypoints": [
+      { "path": "app/controllers/webhooks_controller.rb", "kind": "rails-controller", "name": "WebhooksController#create" }
+    ],
+    "file_errors": [
+      { "path": "app/broken.rb", "message": "syntax error near line 3" }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": 3,
+  "op": "analyze",
+  "params": {
+    "root": "/repo",
+    "commit": "0c2cdd9",
+    "files": ["app/models/invoice.rb"],
+    "analyzers": ["rubocop", "simplecov"],
+    "config": { "rubocop": { "config_path": ".rubocop.yml" } }
+  }
+}

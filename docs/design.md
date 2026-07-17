@@ -308,6 +308,8 @@ A provider is any executable that speaks the protocol (JSON over stdio, or file-
 
 The core **version-negotiates** via `capabilities`, resolves each finding to a symbol using the map, and stores results. Providers are **availability-gated**, **failure-isolated**, and **cached** per (tool, version, file hash) — see §6.2. Symbol-path normalization (`Class#method` / `Class.method` / `Module::Class` / bare) is the **provider's** responsibility, so the core stays language-neutral.
 
+The protocol is finalized as **v1** in [`docs/protocol.md`](protocol.md) (JSONL transport, version negotiation, error/partial-result semantics, file-mediated large payloads); the canonical Go types and conformance fixtures live in `internal/protocol` (TDS-5).
+
 ### 9.3 Provider discovery & distribution
 
 - **Tree-sitter fallback provider** — a *separate binary* (not compiled into the core), built per-OS. Gives symbols where a grammar exists and line-range anchors otherwise, so `tds` **never refuses a repo**. It lives outside the core because tree-sitter requires CGO, which would forfeit the CGO-free core and easy cross-compilation (spike TDS-4). Shipped alongside the core binary and discovered like any other provider; if it is somehow absent, unsupported languages degrade to line-range anchors only.

@@ -1,0 +1,5 @@
+{
+  "id": 4,
+  "ok": false,
+  "error": { "code": "unsupported_op", "message": "provider does not implement op \"analyze\"" }
+}
