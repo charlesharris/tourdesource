@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -58,6 +59,13 @@ func Discover(root string) ([]Spec, error) {
 
 	for _, b := range builtinProviders {
 		if seen[b.Name] {
+			continue
+		}
+		// Override hook: TDS_PROVIDER_RUBY / TDS_PROVIDER_JS point at a provider
+		// executable directly (useful before a global install, and in tests).
+		if p := os.Getenv("TDS_PROVIDER_" + strings.ToUpper(b.Name)); p != "" {
+			specs = append(specs, Spec{Name: b.Name, Command: []string{p}})
+			seen[b.Name] = true
 			continue
 		}
 		if path, err := exec.LookPath(b.Bin); err == nil {

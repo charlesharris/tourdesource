@@ -5,6 +5,9 @@
 *.out
 coverage.*
 
+# tds generated map output
+.tds/
+
 # Ruby provider (gem: lockfile + vendored bundle are not tracked)
 providers/ruby/Gemfile.lock
 providers/ruby/vendor/

@@ -27,22 +27,22 @@ const schemaVersion = "1"
 // File is a source file tracked in the map, with its detected language, size in
 // bytes, and a computed significance score used to rank the map.
 type File struct {
-	Path         string
-	Language     string
-	Size         int64
-	Significance float64
+	Path         string  `json:"path"`
+	Language     string  `json:"language"`
+	Size         int64   `json:"size"`
+	Significance float64 `json:"significance"`
 }
 
 // GitSignal is the per-file git history summary the map uses to weight files:
 // commit churn, the first and last commit touching the file, its age in days,
 // and the distinct authors who changed it.
 type GitSignal struct {
-	Path        string
-	Churn       int
-	FirstCommit string
-	LastCommit  string
-	AgeDays     int
-	Authors     []string
+	Path        string   `json:"path"`
+	Churn       int      `json:"churn"`
+	FirstCommit string   `json:"first_commit"`
+	LastCommit  string   `json:"last_commit"`
+	AgeDays     int      `json:"age_days"`
+	Authors     []string `json:"authors"`
 }
 
 // Store is a handle to an open map database. It is safe to Close once and is
