@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/charlesharris/tourdesource/internal/anchor"
 	"github.com/charlesharris/tourdesource/internal/protocol"
 	"github.com/charlesharris/tourdesource/internal/store"
 )
@@ -70,6 +71,16 @@ func TestBuildOnMiniRailsRepo(t *testing.T) {
 	}
 	if !hasSymbol(symbols, "Invoice#finalize") {
 		t.Errorf("Invoice#finalize not in store; got %d symbols", len(symbols))
+	}
+
+	// End-to-end anchor resolution (TDS-12) against the real provider output:
+	// Invoice#finalize is at lines 2-4 in the fixture model.
+	resolved, err := anchor.NewResolver(symbols).Resolve("app/models/invoice.rb::Invoice#finalize")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Kind != anchor.KindSymbol || resolved.StartLine != 2 {
+		t.Errorf("anchor resolved to %+v, want a symbol starting at line 2", resolved)
 	}
 
 	entrypoints, err := st.Entrypoints()
