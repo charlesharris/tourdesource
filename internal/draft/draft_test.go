@@ -337,3 +337,11 @@ func anchorsIn(md string) []string {
 		i = start + end
 	}
 }
+
+// assertParses fails unless md is a valid tour document.
+func assertParses(t *testing.T, md string) {
+	t.Helper()
+	if _, err := tour.Parse([]byte(md)); err != nil {
+		t.Fatalf("document does not parse as a tour: %v\n\n%s", err, md)
+	}
+}

@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charlesharris/tourdesource/internal/anchor"
 	"github.com/charlesharris/tourdesource/internal/protocol"
 	"github.com/charlesharris/tourdesource/internal/store"
 )
@@ -46,6 +47,27 @@ type Context struct {
 	Hotspots      []Hotspot
 	Slice         Slice
 	Conventions   []Convention
+
+	// landmarksUsed records how many of the pool actually became stops, after
+	// dropping those an earlier chapter already covered.
+	landmarksUsed int
+	// resolver turns a stop's anchor back into concrete lines, so narration can
+	// be shown the code it is describing. It resolves against the same map the
+	// anchors were drawn from, so this cannot disagree with the built tour.
+	resolver *anchor.Resolver
+}
+
+// resolveAnchor returns the file and line range an anchor points at, or an empty
+// path when it does not resolve.
+func (c *Context) resolveAnchor(anchorStr string) (path string, start, end int) {
+	if c.resolver == nil {
+		return "", 0, 0
+	}
+	got, err := c.resolver.Resolve(anchorStr)
+	if err != nil || got.Kind == anchor.KindUnresolved {
+		return "", 0, 0
+	}
+	return got.Path, got.StartLine, got.EndLine
 }
 
 // Readme is the repo's front-door prose, used to ground the opening chapter.
@@ -163,6 +185,7 @@ func Assemble(st *store.Store, root string, opts AssembleOptions) (*Context, err
 	}
 	// Rank a deeper pool than the chapter needs so the renderer has replacements
 	// for landmarks that earlier chapters already covered.
+	ctx.resolver = anchor.NewResolver(symbols)
 	ctx.Landmarks = rankLandmarks(symbols, entrypoints, churn, opts.MaxLandmarks*3+4)
 	ctx.LandmarkLimit = opts.MaxLandmarks
 	ctx.Hotspots = rankHotspots(files, churn, opts.MaxHotspots)

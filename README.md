@@ -49,6 +49,27 @@ whose anchors all resolve. What it leaves you is the prose: every stop carries a
 `TODO` and the evidence tds used to pick it, so curating means fixing and pruning
 rather than starting from a blank page.
 
+### Let an assistant write the first draft of the prose
+
+```sh
+tds draft . --narrate
+```
+
+`--narrate` hands the finished skeleton to Claude Code — running in a tmux pane
+on **your own subscription**, no API key — along with the source each stop
+anchors, and asks only for prose. On Redmine that fills all 18 stops in a single
+request.
+
+The division of labour is the point. **tds decides what to point at; the model
+only writes about it.** Anchors are chosen from the map before the assistant is
+involved and are never part of its response, so it cannot point a stop at a
+symbol that does not exist. Prose that tries to smuggle in a tour directive is
+rejected and the stop keeps its `TODO`.
+
+Narrated prose is a *first draft*, not a finished tour — the model can write
+something fluent and wrong. The generated file says so at the top. Read it before
+you share it.
+
 A tour source file is Markdown with light directives:
 
 ```markdown
@@ -140,7 +161,7 @@ and ships as one static binary.
 |---|---|---|
 | `tds map` | Structural index: symbols, imports, Rails entrypoints, git signals → SQLite + JSON | ✅ working |
 | `tds analyze` | Run language tooling (linters, types, coverage) into normalized findings | 🚧 pipeline built, no command yet (M3) |
-| `tds draft` | Generate a curated-ready tour skeleton from the map | ✅ working (deterministic; AI passes are M4) |
+| `tds draft` | Generate a curated-ready tour skeleton from the map, optionally narrated by an assistant (`--narrate`) | ✅ working |
 | `tds build` | Compile a tour into a self-contained static bundle | ✅ working |
 | `tds check` | Re-resolve anchors against HEAD and report drift | 🚧 planned |
 
@@ -152,14 +173,21 @@ next. A tree-sitter fallback covers other languages with line-range anchors.
 Early, but the core loop works end to end: **`tds map` → `tds draft` → curate →
 `tds build` → open a real, shareable tour.**
 
-Drafting is deterministic today: it decides *what to point at* from the map's
-entrypoints, git signals and symbol ranking, and every anchor it emits names a
-symbol that exists — the same constraint that will keep the M4 AI passes from
-inventing code. What it doesn't do is write the prose. Saying *why* a landmark
-matters is judgment, and a machine-written paragraph that sounds right but isn't
-is worse than a `TODO`. See
-[`docs/design.md`](docs/design.md) for the full design and
-[`docs/implementation-plan.md`](docs/implementation-plan.md) for the roadmap.
+Drafting splits the work along the line where machines and judgment actually
+differ. **Choosing what to point at is deterministic** — ranked from the map's
+entrypoints, git signals and symbol sizes — so every anchor names a symbol that
+provably exists. **Writing about it is optional and delegated**: `--narrate`
+hands that skeleton to an assistant, which never sees a chance to change an
+anchor because anchors are not part of its response.
+
+That leaves the honest gap where it belongs. tds can tell you `Issue` is the
+landmark; whether the paragraph about it is *true* still needs a human read, and
+the generated file says so.
+
+See [`docs/design.md`](docs/design.md) for the full design,
+[`docs/implementation-plan.md`](docs/implementation-plan.md) for the roadmap, and
+[`docs/tmux-orchestration.md`](docs/tmux-orchestration.md) for how `--narrate`
+drives the assistant.
 
 ## Build from source
 
@@ -185,4 +213,5 @@ export TDS_PROVIDER_RUBY="$PWD/providers/ruby/exe/tds-provider-ruby"
 - [`docs/design.md`](docs/design.md) — architecture and design decisions
 - [`docs/implementation-plan.md`](docs/implementation-plan.md) — milestones and tasks
 - [`docs/protocol.md`](docs/protocol.md) — the provider protocol (v1)
+- [`docs/tmux-orchestration.md`](docs/tmux-orchestration.md) — driving an assistant over tmux
 - [`docs/tours/ruby-provider.tour.md`](docs/tours/ruby-provider.tour.md) — an example tour

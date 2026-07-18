@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charlesharris/tourdesource/internal/orchestration"
 	"github.com/charlesharris/tourdesource/internal/protocol"
 	"github.com/charlesharris/tourdesource/internal/store"
 )
@@ -16,11 +17,18 @@ import (
 type Options struct {
 	Root     string // repository root
 	MapDir   string // directory holding map.sqlite; default <root>/.tds
-	Out      string // output .tour.md path; default <root>/.tds/<project>.tour.md
+	Out      string // output .tour.md path; default <map-dir>/<project>.tour.md
 	Audience string // frontmatter audience line
 	Template Template
 	Assemble AssembleOptions
-	Warnf    func(format string, a ...any)
+
+	// Narrate fills each stop's prose using an assistant instead of leaving a
+	// TODO. Nil leaves the draft unnarrated, which is the default: generation
+	// costs the author tokens and should be opted into.
+	Narrate *NarrateOptions
+
+	Warnf func(format string, a ...any)
+	Logf  func(format string, a ...any)
 }
 
 // Result summarizes a generated draft.
@@ -33,23 +41,23 @@ type Result struct {
 	Anchors   int // stops carrying a symbol anchor
 	Landmarks int
 	Hotspots  int
-
-	// seen tracks anchors already emitted, so no symbol is pointed at twice
-	// across chapters.
-	seen map[string]bool
+	Narrated  int // stops whose prose came from the assistant
 }
 
-// Generate assembles context from the map and renders a tour skeleton.
+// Generate assembles context from the map, plans a tour, optionally narrates it,
+// and writes the result.
 //
-// Every anchor it emits names a symbol that exists in the map. Prose is left as
-// TODO placeholders carrying the evidence tds has — the split is deliberate:
-// choosing *what to point at* is a ranking problem the map can answer, while
-// saying *why it matters* is judgment, and inventing that is what makes machine
-// -written tours worthless.
-func Generate(_ context.Context, opts Options) (*Result, error) {
-	warnf := opts.Warnf
+// Every anchor it emits names a symbol that exists in the map. That is the
+// anti-hallucination lever (design §6.2), and it holds whether or not narration
+// runs: the plan fixes anchors before an assistant is involved, and narration
+// only ever supplies prose keyed by stop id.
+func Generate(ctx context.Context, opts Options) (*Result, error) {
+	warnf, logf := opts.Warnf, opts.Logf
 	if warnf == nil {
 		warnf = func(string, ...any) {}
+	}
+	if logf == nil {
+		logf = func(string, ...any) {}
 	}
 	if opts.Template.Name == "" {
 		opts.Template = Onboarding()
@@ -74,27 +82,50 @@ func Generate(_ context.Context, opts Options) (*Result, error) {
 	}
 	defer st.Close()
 
-	ctx, err := Assemble(st, root, opts.Assemble)
+	dctx, err := Assemble(st, root, opts.Assemble)
 	if err != nil {
 		return nil, err
 	}
-	if len(ctx.Landmarks) == 0 {
+	if len(dctx.Landmarks) == 0 {
 		warnf("no landmarks found: the map has no class or module symbols, so the draft will be thin")
+	}
+
+	if opts.Audience == "" {
+		opts.Audience = "engineers new to " + dctx.ProjectName
+	}
+	plan := buildPlan(dctx, opts)
+
+	res := &Result{
+		Commit:    dctx.Commit,
+		Template:  opts.Template.Name,
+		Chapters:  len(plan.Chapters),
+		Landmarks: dctx.landmarksUsed,
+		Hotspots:  len(dctx.Hotspots),
+	}
+	for _, s := range plan.allStops() {
+		res.Stops++
+		if s.Symbol != "" {
+			res.Anchors++
+		}
+	}
+
+	if opts.Narrate != nil {
+		n, err := narrate(ctx, plan, dctx, *opts.Narrate, logf, warnf)
+		if err != nil {
+			return nil, fmt.Errorf("narrating: %w", err)
+		}
+		res.Narrated = n
+		plan.Narrated = n > 0
 	}
 
 	out := opts.Out
 	if out == "" {
-		out = filepath.Join(mapDir, ctx.ProjectName+".tour.md")
+		out = filepath.Join(mapDir, dctx.ProjectName+".tour.md")
 	}
-	if opts.Audience == "" {
-		opts.Audience = "engineers new to " + ctx.ProjectName
-	}
-
-	md, res := render(ctx, opts)
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return nil, fmt.Errorf("creating output dir: %w", err)
 	}
-	if err := os.WriteFile(out, md, 0o644); err != nil {
+	if err := os.WriteFile(out, serialize(plan), 0o644); err != nil {
 		return nil, fmt.Errorf("writing %s: %w", out, err)
 	}
 
@@ -102,159 +133,147 @@ func Generate(_ context.Context, opts Options) (*Result, error) {
 	return res, nil
 }
 
-// render emits the .tour.md and counts what it produced.
-func render(ctx *Context, opts Options) ([]byte, *Result) {
-	var b strings.Builder
-	res := &Result{
-		Commit:   ctx.Commit,
+// buildPlan pours the assembled context into the template.
+func buildPlan(dctx *Context, opts Options) *Plan {
+	title := dctx.ProjectName
+	if dctx.Readme.Title != "" && !strings.EqualFold(dctx.Readme.Title, dctx.ProjectName) {
+		title = fmt.Sprintf("%s — %s", dctx.ProjectName, dctx.Readme.Title)
+	}
+
+	p := &Plan{
+		Title:    "A tour of " + title,
+		Audience: opts.Audience,
+		Commit:   dctx.Commit,
 		Template: opts.Template.Name,
-		Hotspots: len(ctx.Hotspots),
-		seen:     map[string]bool{},
 	}
-
-	title := ctx.ProjectName
-	if ctx.Readme.Title != "" && !strings.EqualFold(ctx.Readme.Title, ctx.ProjectName) {
-		title = fmt.Sprintf("%s — %s", ctx.ProjectName, ctx.Readme.Title)
-	}
-
-	b.WriteString("---\n")
-	fmt.Fprintf(&b, "title: %q\n", "A tour of "+title)
-	fmt.Fprintf(&b, "template: %s\n", opts.Template.Name)
-	fmt.Fprintf(&b, "audience: %q\n", opts.Audience)
-	if ctx.Commit != "" {
-		fmt.Fprintf(&b, "commit: %s\n", ctx.Commit)
-	}
-	b.WriteString("---\n\n")
-
-	b.WriteString(draftBanner)
-	b.WriteString("\n")
-
-	if ctx.Readme.Lead != "" {
-		fmt.Fprintf(&b, "%s\n\n", ctx.Readme.Lead)
-		fmt.Fprintf(&b, "<!-- from %s — rewrite in your own words -->\n\n", ctx.Readme.Path)
+	if dctx.Readme.Lead != "" {
+		p.Intro = dctx.Readme.Lead
+		p.IntroNote = "from " + dctx.Readme.Path + " — rewrite in your own words"
 	} else {
-		b.WriteString("TODO: one paragraph on what this project is.\n\n")
+		p.Intro = "TODO: one paragraph on what this project is."
 	}
+
+	used := map[string]bool{} // stop ids
+	seen := map[string]bool{} // anchors, to avoid pointing at the same symbol twice
 
 	for _, spec := range opts.Template.Chapters {
-		fmt.Fprintf(&b, "# Chapter: %s\n\n", spec.Title)
-		fmt.Fprintf(&b, "<!-- %s -->\n\n", spec.Guidance)
-		res.Chapters++
-
+		ch := PlanChapter{Title: spec.Title, Guidance: spec.Guidance}
 		switch spec.Kind {
 		case SectionOverview:
-			renderOverview(&b, ctx, res)
+			planOverview(&ch, dctx, used, seen)
 		case SectionSlice:
-			renderSlice(&b, ctx, res)
+			planSlice(&ch, dctx, used, seen)
 		case SectionLandmarks:
-			renderLandmarks(&b, ctx, res)
+			dctx.landmarksUsed = planLandmarks(&ch, dctx, used, seen)
 		case SectionConventions:
-			renderConventions(&b, ctx, res)
+			planConventions(&ch, dctx, used, seen)
 		case SectionSideQuests:
-			renderSideQuests(&b, ctx, res)
+			planSideQuests(&ch, dctx, used, seen)
 		}
+		p.Chapters = append(p.Chapters, ch)
 	}
-
-	return []byte(b.String()), res
+	return p
 }
 
-const draftBanner = `<!-- DRAFT generated by ` + "`tds draft`" + `.
-Anchors below name symbols that exist in the map, so they resolve. The prose is
-not written yet: each stop carries the evidence tds has and a TODO. Curating
-this means fixing, cutting, and reordering — not starting from a blank page. -->
-`
+// addStop appends a stop unless its anchor was already used earlier in the tour.
+func addStop(ch *PlanChapter, used, seen map[string]bool, anchor, symbol, task, evidence string) *PlanStop {
+	if seen[anchor] {
+		return nil
+	}
+	seen[anchor] = true
+	ch.Stops = append(ch.Stops, PlanStop{
+		ID:       makeID(anchor, used),
+		Anchor:   anchor,
+		Symbol:   symbol,
+		Task:     task,
+		Evidence: evidence,
+	})
+	return &ch.Stops[len(ch.Stops)-1]
+}
 
-func renderOverview(b *strings.Builder, ctx *Context, res *Result) {
-	if len(ctx.Languages) > 0 {
+func planOverview(ch *PlanChapter, dctx *Context, used, seen map[string]bool) {
+	if len(dctx.Languages) > 0 {
 		var parts []string
-		for i, l := range ctx.Languages {
+		for i, l := range dctx.Languages {
 			if i >= 5 {
 				break
 			}
 			parts = append(parts, fmt.Sprintf("%s (%d files)", l.Language, l.Files))
 		}
-		fmt.Fprintf(b, "<!-- languages: %s -->\n\n", strings.Join(parts, ", "))
+		ch.Notes = append(ch.Notes, "languages: "+strings.Join(parts, ", "))
+	}
+	if s := entrypointSummary(dctx); s != "" {
+		ch.Notes = append(ch.Notes, "entrypoints: "+s)
 	}
 
-	// Entrypoint counts tell a reader what kind of system this is before any
-	// prose does.
-	if summary := entrypointSummary(ctx); summary != "" {
-		fmt.Fprintf(b, "<!-- entrypoints: %s -->\n\n", summary)
+	// The routes table is the single best answer to "what can this system do?".
+	if routes := dctx.Entrypoints["rails-routes"]; len(routes) > 0 {
+		addStop(ch, used, seen, routes[0].Path+":1-40", "",
+			"the surface area of the app — what are the main things a user can do?", "")
 	}
-
-	// Anchor the opening at the routes table when there is one: it is the single
-	// best answer to "what can this system do?".
-	if routes := ctx.Entrypoints["rails-routes"]; len(routes) > 0 {
-		writeStop(b, res, routes[0].Path+":1-40", "",
-			"TODO: the surface area of the app. What are the main things a user can do?")
-	}
-	if models := ctx.Entrypoints["rails-model"]; len(models) > 0 {
-		writeStop(b, res, models[0].Path+"::"+models[0].Name, models[0].Name,
-			"TODO: the central record this system is organised around, and what it represents.")
+	if models := dctx.Entrypoints["rails-model"]; len(models) > 0 {
+		addStop(ch, used, seen, models[0].Path+"::"+models[0].Name, models[0].Name,
+			"the central record this system is organised around, and what it represents", "")
 	}
 }
 
-func renderSlice(b *strings.Builder, ctx *Context, res *Result) {
-	if ctx.Slice.Reason != "" {
-		fmt.Fprintf(b, "<!-- proposed trace: %s -->\n\n", ctx.Slice.Reason)
+func planSlice(ch *PlanChapter, dctx *Context, used, seen map[string]bool) {
+	if dctx.Slice.Reason != "" {
+		ch.Notes = append(ch.Notes, "proposed trace: "+dctx.Slice.Reason)
 	}
-	if ctx.Slice.Entry == nil && len(ctx.Slice.Steps) == 0 {
-		b.WriteString("<!-- tds could not propose a trace: no entrypoints in the map. -->\n\n")
+	if dctx.Slice.Entry == nil && len(dctx.Slice.Steps) == 0 {
+		ch.Notes = append(ch.Notes, "tds could not propose a trace: no entrypoints in the map")
 		return
 	}
-	if e := ctx.Slice.Entry; e != nil {
-		writeStop(b, res, anchorFor(e.Symbol), e.Symbol.Symbol,
-			"TODO: where the operation begins. What arrives here, and what does this layer decide?")
+	if e := dctx.Slice.Entry; e != nil {
+		addStop(ch, used, seen, anchorFor(e.Symbol), e.Symbol.Symbol,
+			"where the operation begins — what arrives here, and what does this layer decide?", "")
 	}
-	for _, s := range ctx.Slice.Steps {
-		writeStop(b, res, anchorFor(s.Symbol), s.Symbol.Symbol,
-			"TODO: what happens at this step, and what it hands on. ("+s.Reason+")")
+	for _, s := range dctx.Slice.Steps {
+		addStop(ch, used, seen, anchorFor(s.Symbol), s.Symbol.Symbol,
+			"what happens at this step, and what it hands on", s.Reason)
 	}
 }
 
-// renderLandmarks fills the chapter to its limit, drawing from the ranked pool
-// and skipping anything an earlier chapter already anchored.
-func renderLandmarks(b *strings.Builder, ctx *Context, res *Result) {
-	limit := ctx.LandmarkLimit
+// planLandmarks fills the chapter to its limit from the ranked pool, skipping
+// anything an earlier chapter already anchored. Returns how many it placed.
+func planLandmarks(ch *PlanChapter, dctx *Context, used, seen map[string]bool) int {
+	limit := dctx.LandmarkLimit
 	if limit <= 0 {
-		limit = len(ctx.Landmarks)
+		limit = len(dctx.Landmarks)
 	}
 	n := 0
-	for _, l := range ctx.Landmarks {
+	for _, l := range dctx.Landmarks {
 		if n >= limit {
 			break
 		}
-		if writeStop(b, res, anchorFor(l.Symbol), l.Symbol.Symbol,
-			"TODO: why this exists and the one thing to know about it. ("+l.Reason+")") {
+		if addStop(ch, used, seen, anchorFor(l.Symbol), l.Symbol.Symbol,
+			"why this exists and the one thing to know about it", l.Reason) != nil {
 			n++
-			res.Landmarks++
 		}
 	}
+	return n
 }
 
-func renderConventions(b *strings.Builder, ctx *Context, res *Result) {
-	for _, c := range ctx.Conventions {
-		fmt.Fprintf(b, "**%s.** %s\n\n", c.Title, c.Detail)
+func planConventions(ch *PlanChapter, dctx *Context, used, seen map[string]bool) {
+	for _, c := range dctx.Conventions {
+		ch.Body = append(ch.Body, fmt.Sprintf("**%s.** %s", c.Title, c.Detail))
 	}
-	if ctx.Readme.Path != "" {
-		writeStop(b, res, ctx.Readme.Path+":1-30", "",
-			"TODO: how to get it running locally, and anything the README gets wrong.")
+	if dctx.Readme.Path != "" {
+		addStop(ch, used, seen, dctx.Readme.Path+":1-30", "",
+			"how to get it running locally, and anything the README gets wrong", "")
 	}
 }
 
-// renderSideQuests emits each side-quest as a stop that introduces it, with any
-// further examples nested in a detour beneath.
-//
-// The shape is dictated by the format: a detour is a side-quest *from a stop*
-// (chapter > stop > detour > stop), so a side-quest needs a stop to hang from.
-// Leading with the most representative example and collapsing the rest reads
-// better than a bare list anyway.
-func renderSideQuests(b *strings.Builder, ctx *Context, res *Result) {
-	for _, q := range []struct{ kind, label, prompt string }{
-		{"rails-job", "background jobs", "TODO: when does work end up in a job rather than inline, and who runs them?"},
-		{"rails-mailer", "outbound mail", "TODO: what does this system send, and what triggers it?"},
+// planSideQuests makes each side-quest a stop with the extra examples folded
+// into a detour beneath it — the chapter > stop > detour > stop nesting the tour
+// format defines.
+func planSideQuests(ch *PlanChapter, dctx *Context, used, seen map[string]bool) {
+	for _, q := range []struct{ kind, label, task string }{
+		{"rails-job", "background jobs", "when work ends up in a job rather than inline, and who runs them"},
+		{"rails-mailer", "outbound mail", "what this system sends, and what triggers it"},
 	} {
-		eps := ctx.Entrypoints[q.kind]
+		eps := dctx.Entrypoints[q.kind]
 		if len(eps) == 0 {
 			continue
 		}
@@ -263,105 +282,125 @@ func renderSideQuests(b *strings.Builder, ctx *Context, res *Result) {
 			rest = rest[:3]
 		}
 
-		var extras []nestedStop
+		stop := addStop(ch, used, seen, lead.Path+"::"+lead.Name, lead.Name,
+			fmt.Sprintf("if you're working on %s: %s", q.label, q.task), "")
+		if stop == nil {
+			continue
+		}
+
+		var nested []PlanStop
 		for _, e := range rest {
-			extras = append(extras, nestedStop{
-				anchor: e.Path + "::" + e.Name,
-				symbol: e.Name,
-				prose:  "TODO: what this one does, and what triggers it.",
+			anchor := e.Path + "::" + e.Name
+			if seen[anchor] {
+				continue
+			}
+			seen[anchor] = true
+			nested = append(nested, PlanStop{
+				ID:     makeID(anchor, used),
+				Anchor: anchor,
+				Symbol: e.Name,
+				Task:   "what this one does, and what triggers it",
 			})
 		}
-		writeStopWithDetour(b, res,
-			lead.Path+"::"+lead.Name, lead.Name,
-			fmt.Sprintf("**If you're working on %s.** %s", q.label, q.prompt),
-			"The other "+q.label, extras)
+		if len(nested) > 0 {
+			stop.Detour = &PlanDetour{Title: "The other " + q.label, Stops: nested}
+		}
 	}
 
-	if len(ctx.Hotspots) > 0 {
-		lead := ctx.Hotspots[0]
+	if len(dctx.Hotspots) > 0 {
+		lead := dctx.Hotspots[0]
 		var sb strings.Builder
-		sb.WriteString("**I'm here to fix a bug.** These files change most often, so this is where work tends to land:\n\n")
-		for _, h := range ctx.Hotspots {
+		sb.WriteString("These files change most often, so this is where work tends to land:\n\n")
+		for _, h := range dctx.Hotspots {
 			sb.WriteString(fmt.Sprintf("- `%s` — %d commits", h.Path, h.Churn))
 			if a := authorPhrase(h.Authors); a != "" {
 				sb.WriteString(", " + a)
 			}
 			sb.WriteString("\n")
 		}
-		sb.WriteString("\nTODO: which of these are genuinely hot, and which just churn?")
-		writeStop(b, res, fmt.Sprintf("%s:1-40", lead.Path), "", sb.String())
+		addStop(ch, used, seen, fmt.Sprintf("%s:1-40", lead.Path), "",
+			"if you're here to fix a bug: which of these are genuinely hot, and which just churn?",
+			strings.TrimSpace(sb.String()))
 	}
 }
 
-// nestedStop is a stop to emit inside a detour.
-type nestedStop struct {
-	anchor string
-	symbol string
-	prose  string
-}
+// serialize writes the plan as a `.tour.md`.
+func serialize(p *Plan) []byte {
+	var b strings.Builder
 
-// writeStopWithDetour emits a stop and, when there are extras, a detour nested
-// inside it holding them — the chapter > stop > detour > stop nesting the format
-// defines. With no extras it degrades to a plain stop.
-func writeStopWithDetour(
-	b *strings.Builder, res *Result,
-	anchor, symbol, prose, detourTitle string,
-	extras []nestedStop,
-) {
-	if res.seen[anchor] {
-		return
+	b.WriteString("---\n")
+	fmt.Fprintf(&b, "title: %q\n", p.Title)
+	fmt.Fprintf(&b, "template: %s\n", p.Template)
+	fmt.Fprintf(&b, "audience: %q\n", p.Audience)
+	if p.Commit != "" {
+		fmt.Fprintf(&b, "commit: %s\n", p.Commit)
 	}
-	res.seen[anchor] = true
+	b.WriteString("---\n\n")
+	b.WriteString(bannerFor(p) + "\n")
 
-	fmt.Fprintf(b, "::stop{anchor=%q}\n", anchor)
-	fmt.Fprintf(b, "%s\n", prose)
-	res.Stops++
-	if symbol != "" {
-		res.Anchors++
+	fmt.Fprintf(&b, "%s\n\n", p.Intro)
+	if p.IntroNote != "" {
+		fmt.Fprintf(&b, "<!-- %s -->\n\n", p.IntroNote)
 	}
 
-	var nested []nestedStop
-	for _, e := range extras {
-		if res.seen[e.anchor] {
-			continue
+	for _, ch := range p.Chapters {
+		fmt.Fprintf(&b, "# Chapter: %s\n\n", ch.Title)
+		fmt.Fprintf(&b, "<!-- %s -->\n\n", ch.Guidance)
+		for _, n := range ch.Notes {
+			fmt.Fprintf(&b, "<!-- %s -->\n\n", n)
 		}
-		nested = append(nested, e)
+		for _, body := range ch.Body {
+			fmt.Fprintf(&b, "%s\n\n", body)
+		}
+		for _, st := range ch.Stops {
+			writePlanStop(&b, st)
+		}
 	}
-	if len(nested) > 0 {
-		fmt.Fprintf(b, "::detour{title=%q}\n", detourTitle)
-		for _, e := range nested {
-			res.seen[e.anchor] = true
-			fmt.Fprintf(b, "::stop{anchor=%q}\n", e.anchor)
-			fmt.Fprintf(b, "%s\n", e.prose)
-			b.WriteString("::\n")
-			res.Stops++
-			if e.symbol != "" {
-				res.Anchors++
+	return []byte(b.String())
+}
+
+func writePlanStop(b *strings.Builder, st PlanStop) {
+	fmt.Fprintf(b, "::stop{anchor=%q}\n", st.Anchor)
+	prose := st.Prose
+	if strings.TrimSpace(prose) == "" {
+		prose = st.todoProse()
+	}
+	fmt.Fprintf(b, "%s\n", prose)
+
+	if d := st.Detour; d != nil && len(d.Stops) > 0 {
+		fmt.Fprintf(b, "::detour{title=%q}\n", d.Title)
+		if strings.TrimSpace(d.Intro) != "" {
+			fmt.Fprintf(b, "%s\n", d.Intro)
+		}
+		for _, ds := range d.Stops {
+			fmt.Fprintf(b, "::stop{anchor=%q}\n", ds.Anchor)
+			p := ds.Prose
+			if strings.TrimSpace(p) == "" {
+				p = ds.todoProse()
 			}
+			fmt.Fprintf(b, "%s\n", p)
+			b.WriteString("::\n")
 		}
 		b.WriteString("::\n") // close the detour
 	}
-
 	b.WriteString("::\n\n") // close the stop
 }
 
-// writeStop emits one stop directive, skipping an anchor already used earlier in
-// the tour. symbol is informational — used only to decide whether the stop counts
-// as symbol-anchored. Reports whether a stop was written.
-func writeStop(b *strings.Builder, res *Result, anchor, symbol, prose string) bool {
-	if res.seen[anchor] {
-		return false
+// bannerFor states what the document is. A narrated draft and a placeholder
+// draft need reviewing for different reasons, and saying "TODO" in a file with
+// no TODOs in it just teaches the reader to ignore the banner.
+func bannerFor(p *Plan) string {
+	if p.Narrated {
+		return "<!-- DRAFT generated by `tds draft --narrate`.\n" +
+			"Anchors name symbols that exist in the map, so they resolve; they were\n" +
+			"chosen from the map, not written by the assistant. The prose WAS written by\n" +
+			"an assistant from the anchored code and has not been reviewed — read it for\n" +
+			"claims the code does not support before sharing this tour. -->\n"
 	}
-	res.seen[anchor] = true
-
-	fmt.Fprintf(b, "::stop{anchor=%q}\n", anchor)
-	fmt.Fprintf(b, "%s\n", prose)
-	b.WriteString("::\n\n")
-	res.Stops++
-	if symbol != "" {
-		res.Anchors++
-	}
-	return true
+	return "<!-- DRAFT generated by `tds draft`.\n" +
+		"Anchors below name symbols that exist in the map, so they resolve. Prose marked\n" +
+		"TODO is not written yet: each carries the evidence tds has. Curating this means\n" +
+		"fixing, cutting, and reordering — not starting from a blank page. -->\n"
 }
 
 // anchorFor builds the symbol anchor for a mapped symbol.
@@ -369,18 +408,29 @@ func anchorFor(s protocol.Symbol) string {
 	return s.Path + "::" + s.Symbol
 }
 
-func entrypointSummary(ctx *Context) string {
-	if len(ctx.Entrypoints) == 0 {
+func entrypointSummary(dctx *Context) string {
+	if len(dctx.Entrypoints) == 0 {
 		return ""
 	}
-	kinds := make([]string, 0, len(ctx.Entrypoints))
-	for k := range ctx.Entrypoints {
+	kinds := make([]string, 0, len(dctx.Entrypoints))
+	for k := range dctx.Entrypoints {
 		kinds = append(kinds, k)
 	}
 	sort.Strings(kinds)
 	parts := make([]string, 0, len(kinds))
 	for _, k := range kinds {
-		parts = append(parts, fmt.Sprintf("%s %d", k, len(ctx.Entrypoints[k])))
+		parts = append(parts, fmt.Sprintf("%s %d", k, len(dctx.Entrypoints[k])))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// assistantFor is overridable in tests so narration can be exercised without
+// tmux or tokens.
+var assistantFor = func(ctx context.Context, opts NarrateOptions) (orchestration.Assistant, error) {
+	return orchestration.Start(ctx, orchestration.Options{
+		WorkDir: opts.WorkDir,
+		Session: "tds-draft",
+		Command: opts.Command,
+		Logf:    opts.Logf,
+	})
 }
