@@ -3,9 +3,11 @@ package mapper
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/charlesharris/tourdesource/internal/anchor"
@@ -162,4 +164,72 @@ func hasEntrypointKind(entrypoints []protocol.Entrypoint, kind string) bool {
 		}
 	}
 	return false
+}
+
+// TestReportFileErrorsClamps guards the summary from being buried. A single
+// unparseable file (an ERB-templated generator stub, say) can produce dozens of
+// cascading parser messages, and a repo can hold many such files; mapping a real
+// Rails app surfaced exactly this.
+func TestReportFileErrorsClamps(t *testing.T) {
+	t.Run("truncates a long message", func(t *testing.T) {
+		long := strings.Repeat("unexpected constant path after `class`; ", 30)
+		var got []string
+		reportFileErrors(
+			[]protocol.FileError{{Path: "a.rb", Message: long}},
+			func(format string, a ...any) { got = append(got, fmt.Sprintf(format, a...)) },
+		)
+		if len(got) != 1 {
+			t.Fatalf("want 1 warning, got %d: %v", len(got), got)
+		}
+		if len([]rune(got[0])) > maxFileErrorMessage+len("a.rb: … (truncated)") {
+			t.Errorf("warning not truncated: %d runes", len([]rune(got[0])))
+		}
+		if !strings.Contains(got[0], "truncated") {
+			t.Errorf("a cut message must say so, got %q", got[0])
+		}
+		if !strings.HasPrefix(got[0], "a.rb: ") {
+			t.Errorf("warning must name the file, got %q", got[0])
+		}
+	})
+
+	t.Run("caps the number reported and counts the rest", func(t *testing.T) {
+		var errs []protocol.FileError
+		for i := 0; i < maxFileErrorsReported+7; i++ {
+			errs = append(errs, protocol.FileError{
+				Path:    fmt.Sprintf("app/models/m%02d.rb", i),
+				Message: "syntax error",
+			})
+		}
+		var got []string
+		reportFileErrors(errs, func(format string, a ...any) { got = append(got, fmt.Sprintf(format, a...)) })
+
+		if len(got) != maxFileErrorsReported+1 {
+			t.Fatalf("want %d warnings (%d files + 1 summary), got %d",
+				maxFileErrorsReported+1, maxFileErrorsReported, len(got))
+		}
+		if last := got[len(got)-1]; !strings.Contains(last, "and 7 more") {
+			t.Errorf("last warning = %q, want a count of the remaining 7", last)
+		}
+	})
+
+	t.Run("reports deterministically", func(t *testing.T) {
+		// Provider batches are collected from a map, so ordering is not stable
+		// upstream; successive runs must still warn about the same files.
+		errs := []protocol.FileError{
+			{Path: "z.rb", Message: "e"}, {Path: "a.rb", Message: "e"}, {Path: "m.rb", Message: "e"},
+		}
+		var got []string
+		reportFileErrors(errs, func(format string, a ...any) { got = append(got, fmt.Sprintf(format, a...)) })
+		if !strings.HasPrefix(got[0], "a.rb") || !strings.HasPrefix(got[2], "z.rb") {
+			t.Errorf("file errors must be sorted by path, got %v", got)
+		}
+	})
+
+	t.Run("silent when there is nothing wrong", func(t *testing.T) {
+		called := false
+		reportFileErrors(nil, func(string, ...any) { called = true })
+		if called {
+			t.Error("no file errors must produce no warnings")
+		}
+	})
 }

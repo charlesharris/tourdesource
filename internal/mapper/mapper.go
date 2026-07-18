@@ -109,6 +109,7 @@ func Build(ctx context.Context, opts Options) (*Result, error) {
 	var symbols []protocol.Symbol
 	var imports []protocol.Import
 	var entrypoints []protocol.Entrypoint
+	var fileErrors []protocol.FileError
 	for p, batch := range batches {
 		res, err := p.Structure(ctx, protocol.StructureParams{Root: root, Commit: commit, Files: batch})
 		if err != nil {
@@ -118,10 +119,9 @@ func Build(ctx context.Context, opts Options) (*Result, error) {
 		symbols = append(symbols, res.Symbols...)
 		imports = append(imports, res.Imports...)
 		entrypoints = append(entrypoints, res.Entrypoints...)
-		for _, fe := range res.FileErrors {
-			warnf("%s: %s", fe.Path, fe.Message)
-		}
+		fileErrors = append(fileErrors, res.FileErrors...)
 	}
+	reportFileErrors(fileErrors, warnf)
 
 	// 4. Persist to a fresh store + JSON export.
 	sqlitePath := filepath.Join(outDir, "map.sqlite")
@@ -163,6 +163,47 @@ func Build(ctx context.Context, opts Options) (*Result, error) {
 		Imports:     len(imports),
 		Entrypoints: len(entrypoints),
 	}, nil
+}
+
+// File-error reporting is deliberately clamped. A per-file parse failure is
+// usually uninteresting — an ERB-templated generator stub that was never valid
+// source — and a parser can emit dozens of cascading messages for one such file.
+// Left unbounded that buries the summary the user actually came for.
+const (
+	maxFileErrorsReported = 10
+	maxFileErrorMessage   = 160
+)
+
+// reportFileErrors warns about per-file provider failures, truncating each
+// message and capping the total so a repo full of templates degrades into a
+// count rather than a wall of text. Errors are sorted by path so successive runs
+// report the same ones.
+func reportFileErrors(errs []protocol.FileError, warnf func(string, ...any)) {
+	if len(errs) == 0 {
+		return
+	}
+	sort.Slice(errs, func(i, j int) bool { return errs[i].Path < errs[j].Path })
+
+	shown := errs
+	if len(shown) > maxFileErrorsReported {
+		shown = shown[:maxFileErrorsReported]
+	}
+	for _, fe := range shown {
+		warnf("%s: %s", fe.Path, truncate(fe.Message, maxFileErrorMessage))
+	}
+	if rest := len(errs) - len(shown); rest > 0 {
+		warnf("... and %d more file(s) with parse errors", rest)
+	}
+}
+
+// truncate shortens s to at most n characters, marking that it was cut. It
+// counts runes so a multi-byte message is never split mid-character.
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimRight(string(r[:n]), " ,;") + "… (truncated)"
 }
 
 func persist(
