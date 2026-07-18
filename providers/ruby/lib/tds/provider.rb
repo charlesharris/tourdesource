@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
 require "json"
+require "pathname"
+require "set"
 require_relative "structure"
+require_relative "analyze"
 
 module TDS
   # Provider is the tds Ruby provider: a resident process speaking the tds
@@ -37,6 +40,8 @@ module TDS
         success(id, capabilities)
       when "structure"
         success(id, Structure.new.run(request["params"] || {}))
+      when "analyze"
+        success(id, Analyze.new.run(request["params"] || {}))
       else
         error(id, "unsupported_op", "unsupported op: #{request['op'].inspect}")
       end
@@ -50,8 +55,10 @@ module TDS
         "provider"         => "tds-provider-ruby",
         "provider_version" => VERSION,
         "languages"        => ["ruby"],
-        "operations"       => %w[capabilities structure],
-        "analyzers"        => [] # analyze op arrives in TDS-28/29
+        "operations"       => %w[capabilities structure analyze],
+        # Analyzer availability is probed against the repo we were launched in,
+        # so the core can report what *would* run as well as what will.
+        "analyzers"        => Analyze.capabilities(Dir.pwd)
       }
     end
 
