@@ -117,9 +117,20 @@ func TestRenderSelfContainedPage(t *testing.T) {
 	if !strings.Contains(page, "addEventListener") {
 		t.Error("viewer JS not inlined")
 	}
-	// No external references (CSP-safe / offline).
-	if strings.Contains(page, "http://") || strings.Contains(page, "https://") || strings.Contains(page, "src=") {
-		t.Error("page should have no external references")
+	// No external references: the bundle opens from disk with no server and no
+	// network, so nothing may be *loaded* from elsewhere.
+	//
+	// This checks for loads specifically rather than for the substring "http://".
+	// The compiled viewer contains XML namespace URIs (createElementNS needs
+	// "http://www.w3.org/2000/svg"), which are identifiers a browser never
+	// fetches — banning the substring would fail on correct code.
+	for _, bad := range []string{
+		"<script src=", "<img src=", "<link ", "@import", "url(http", "srcset=",
+		"XMLHttpRequest", "importScripts",
+	} {
+		if strings.Contains(page, bad) {
+			t.Errorf("page contains an external reference (%q); the bundle must be self-contained", bad)
+		}
 	}
 }
 
@@ -241,16 +252,21 @@ func TestOutlineEscapesChapterTitles(t *testing.T) {
 }
 
 // TestViewerScriptSupportsDeepLinks is TDS-21's acceptance criterion. The script
-// is inlined rather than executed here, so this asserts the wiring is present
-// and consistent with the fragments the static rendering emits.
+// is a compiled artifact, so this asserts only what survives minification: the
+// browser APIs it must call and the fragment schemes it must share with the
+// static rendering. Internal function names are deliberately not asserted —
+// they are renamed by the bundler, and pinning them would test the minifier.
 func TestViewerScriptSupportsDeepLinks(t *testing.T) {
 	js := string(Assets()["viewer.js"])
+	if len(js) < 2000 {
+		t.Fatalf("viewer.js is %d bytes; the compiled bundle is missing (run `make viewer`)", len(js))
+	}
 	for _, want := range []string{
 		"hashchange",   // reacts to fragment changes
 		"replaceState", // updates the URL without flooding history
-		"applyHash",    // restores state from the URL on load
-		"stop-",        // the stop fragment scheme
-		"chapter-",     // the chapter fragment scheme
+		"stop-",        // the stop fragment scheme, shared with renderStatic
+		"chapter-",     // the chapter fragment scheme, shared with renderStatic
+		"tds-data",     // reads the inlined payload rather than fetching it
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("viewer.js is missing deep-link support: %q", want)

@@ -25,6 +25,21 @@ provider-treesitter: ## Build the tree-sitter fallback provider into ./bin
 .PHONY: providers
 providers: provider-treesitter ## Build all bundled provider binaries
 
+# The viewer is a Preact app compiled to internal/viewer/assets/{viewer.js,css},
+# which are COMMITTED and go:embed'd. `make build` must never need Node — this
+# target is for changing the viewer, not for building tds.
+.PHONY: viewer
+viewer: ## Rebuild the viewer frontend into internal/viewer/assets
+	cd viewer && npm install --silent && npm run build
+
+.PHONY: viewer-dev
+viewer-dev: ## Run the viewer dev server against a built tour bundle
+	cd viewer && npm run dev
+
+.PHONY: viewer-check
+viewer-check: ## Typecheck the viewer sources
+	cd viewer && npm run check
+
 .PHONY: run
 run: ## Run tds (pass args with ARGS="...")
 	go run . $(ARGS)
