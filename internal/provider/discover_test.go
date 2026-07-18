@@ -47,11 +47,36 @@ func TestDiscoverNoConfigNoBuiltins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
+	known := map[string]bool{}
+	for _, b := range builtinProviders {
+		known[b.Name] = true
+	}
 	for _, s := range specs {
 		// If the CI/host happens to have a builtin on PATH, it must be a builtin name.
-		if s.Name != "ruby" && s.Name != "js" {
+		if !known[s.Name] {
 			t.Errorf("unexpected discovered spec %+v", s)
 		}
+	}
+}
+
+// TestTreesitterFallbackIsDiscoveredLast pins the precedence rule that makes the
+// fallback a fallback: it claims ruby and javascript too, so if it were
+// discovered before a native provider, Host.ForLanguage would hand it those
+// files and the richer native analysis (Rails entrypoints, require edges) would
+// silently never run.
+func TestTreesitterFallbackIsDiscoveredLast(t *testing.T) {
+	idx := -1
+	for i, b := range builtinProviders {
+		if b.Name == "treesitter" {
+			idx = i
+		}
+	}
+	if idx == -1 {
+		t.Fatal("the tree-sitter fallback is not registered as a builtin provider")
+	}
+	if idx != len(builtinProviders)-1 {
+		t.Errorf("treesitter is at index %d of %d builtins; it must be last so native providers win",
+			idx, len(builtinProviders))
 	}
 }
 

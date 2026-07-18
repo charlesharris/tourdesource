@@ -12,12 +12,18 @@ import (
 
 // builtinProviders maps a logical language name to the provider executable the
 // core looks for on PATH. Extended by TDS-27's full config.
+//
+// Order is significant: Host.ForLanguage takes the first provider claiming a
+// language, and the tree-sitter fallback claims many — including ruby and
+// javascript. Keeping it last means a native provider always wins and the
+// fallback only covers what nothing else does.
 var builtinProviders = []struct {
 	Name string
 	Bin  string
 }{
 	{"ruby", "tds-provider-ruby"},
 	{"js", "tds-provider-js"},
+	{"treesitter", "tds-provider-treesitter"},
 }
 
 // fileConfig is the subset of tds.toml this task reads. Full config is TDS-27.

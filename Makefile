@@ -14,13 +14,25 @@ build: ## Build the tds binary into ./bin
 install: ## Install tds into GOBIN
 	go install -ldflags "$(LDFLAGS)" .
 
+# The tree-sitter fallback provider is a separate CGO module, deliberately kept
+# out of the CGO-free core (docs/spikes/tds-4-static-build.md). It therefore
+# builds natively per-OS rather than cross-compiling with the core.
+.PHONY: provider-treesitter
+provider-treesitter: ## Build the tree-sitter fallback provider into ./bin
+	@mkdir -p bin
+	cd providers/treesitter && CGO_ENABLED=1 go build -o ../../bin/tds-provider-treesitter .
+
+.PHONY: providers
+providers: provider-treesitter ## Build all bundled provider binaries
+
 .PHONY: run
 run: ## Run tds (pass args with ARGS="...")
 	go run . $(ARGS)
 
 .PHONY: test
-test: ## Run tests
+test: ## Run tests (core + provider modules)
 	go test ./...
+	cd providers/treesitter && go test ./...
 
 .PHONY: vet
 vet: ## Run go vet

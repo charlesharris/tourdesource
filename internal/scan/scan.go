@@ -142,12 +142,25 @@ var byExtension = map[string]string{
 	".tsx":     "typescript",
 	".go":      "go",
 	".py":      "python",
-	".md":      "markdown",
-	".json":    "json",
-	".yml":     "yaml",
-	".yaml":    "yaml",
-	".html":    "html",
-	".css":     "css",
+	".pyi":     "python",
+	// Languages below have no native provider; the tree-sitter fallback covers
+	// them, and detecting them here is what routes their files to it.
+	".java": "java",
+	".rs":   "rust",
+	".c":    "c",
+	".h":    "c",
+	".cc":   "cpp",
+	".cpp":  "cpp",
+	".cxx":  "cpp",
+	".hpp":  "cpp",
+	".hh":   "cpp",
+
+	".md":   "markdown",
+	".json": "json",
+	".yml":  "yaml",
+	".yaml": "yaml",
+	".html": "html",
+	".css":  "css",
 }
 
 // DetectLanguage returns the language for a path or filename, matched by special
