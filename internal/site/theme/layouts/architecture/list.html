@@ -1,0 +1,45 @@
+{{ define "main" }}
+{{ $m := site.Data.manifest }}
+<div class="page page-arch">
+  <h2>Architecture map</h2>
+  <p class="lede">Eight subsystems arranged by role — from HTTP entry points on the left to shared infrastructure on the right. Expand any node to see its dependencies and key files.</p>
+  <div class="arch-cols">
+    {{ range $m.columns }}
+    {{ $col := . }}
+    <div class="arch-col">
+      <div class="arch-col-head mono">{{ $col }}</div>
+      {{ range where $m.subsystems "column" $col }}
+      {{ $name := .name }}
+      <details class="card arch-node">
+        <summary>
+          <span class="card-title">{{ .name }}</span>
+          <span class="mono text-muted">{{ .files }}f</span>
+        </summary>
+        <p class="card-body">{{ .desc }}</p>
+        <div class="churn"><span style="width: {{ .churn }}%"></span></div>
+        <div class="arch-meta">
+          <div class="mono meta-label">Entry point</div>
+          <a class="mono link" href="{{ partial "fileurl" .entry }}">{{ .entry }}</a>
+        </div>
+        {{ with .deps }}
+        <div class="arch-meta"><div class="mono meta-label">Depends on</div>
+          <div class="tag-row">{{ range . }}<span class="tag tag-outline">{{ . }}</span>{{ end }}</div>
+        </div>
+        {{ end }}
+        {{ $usedby := slice }}
+        {{ range $m.subsystems }}{{ if in .deps $name }}{{ $usedby = $usedby | append .name }}{{ end }}{{ end }}
+        {{ with $usedby }}
+        <div class="arch-meta"><div class="mono meta-label">Used by</div>
+          <div class="tag-row">{{ range . }}<span class="tag tag-neutral">{{ . }}</span>{{ end }}</div>
+        </div>
+        {{ end }}
+        <div class="arch-meta"><div class="mono meta-label">Key files</div>
+          <div class="keyfiles">{{ range .keyFiles }}<a class="mono link" href="{{ partial "fileurl" . }}">{{ . }}</a>{{ end }}</div>
+        </div>
+      </details>
+      {{ end }}
+    </div>
+    {{ end }}
+  </div>
+</div>
+{{ end }}

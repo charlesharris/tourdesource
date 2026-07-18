@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  {{ partial "head.html" . }}
+</head>
+<body data-index="{{ "index.json" | relURL }}">
+  <div class="app">
+    {{ partial "topbar.html" . }}
+    {{ partial "tabs.html" . }}
+    <main class="app-main" id="scroller">
+      {{ block "main" . }}{{ end }}
+    </main>
+  </div>
+  {{ partial "palette.html" . }}
+  <script src="{{ "js/app.js" | relURL }}" defer></script>
+</body>
+</html>

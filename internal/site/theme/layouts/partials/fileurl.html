@@ -1,0 +1,4 @@
+{{- /* fileurl: given a repo path string, return the file page URL (or the explorer index). Usage: {{ partial "fileurl" "app/models/issue.rb" }} */ -}}
+{{- $u := ("files/" | relURL) -}}
+{{- with (where site.RegularPages "Params.path" .) -}}{{- $u = (index . 0).RelPermalink -}}{{- end -}}
+{{- $u -}}

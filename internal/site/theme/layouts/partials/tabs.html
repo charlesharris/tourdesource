@@ -1,0 +1,8 @@
+{{ $sec := .Section }}
+<nav class="tabs" aria-label="Views">
+  <a class="tab {{ if .IsHome }}is-active{{ end }}" href="{{ "/" | relURL }}">Overview</a>
+  <a class="tab {{ if eq $sec "architecture" }}is-active{{ end }}" href="{{ "/architecture/" | relURL }}">Architecture</a>
+  <a class="tab {{ if eq $sec "files" }}is-active{{ end }}" href="{{ "/files/" | relURL }}">Explorer</a>
+  <a class="tab {{ if eq $sec "tour" }}is-active{{ end }}" href="{{ "/tour/" | relURL }}">Tour</a>
+  <a class="tab {{ if eq $sec "symbols" }}is-active{{ end }}" href="{{ "/symbols/" | relURL }}">Symbols</a>
+</nav>

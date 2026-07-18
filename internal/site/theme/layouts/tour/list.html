@@ -1,0 +1,37 @@
+{{ define "main" }}
+{{ $t := site.Data.tour }}
+<div class="tour">
+  <aside class="tour-outline">
+    <h6>Contents</h6>
+    {{ range $t.chapters }}
+    <div class="tour-chapter mono">{{ .title }}</div>
+    {{ range .stops }}
+    <a class="tour-outline-stop mono" href="#{{ .id }}" data-stop-link>{{ .loc }}</a>
+    {{ end }}
+    {{ end }}
+    <p class="tour-hint mono text-muted">Use J / K to move between stops.</p>
+  </aside>
+  <section class="tour-stops">
+    {{ range $t.chapters }}
+    {{ $ch := .title }}
+    {{ range .stops }}
+    {{ $stop := . }}
+    <article class="tour-stop" id="{{ $stop.id }}" data-tour-stop>
+      <div class="tour-stop-prose">
+        <p class="kicker mono">{{ $ch }}</p>
+        <h3 class="mono">{{ $stop.loc }}</h3>
+        <a class="mono link tour-file" href="{{ partial "fileurl" $stop.file }}">{{ $stop.file }}</a>
+        <p class="prose-lg">{{ $stop.prose }}</p>
+      </div>
+      <div class="tour-stop-code code-scroll">
+        {{ with (where site.RegularPages "Params.path" $stop.file) }}
+          {{ $pg := index . 0 }}
+          {{ highlight ($pg.Params.code | default "") ($pg.Params.lang | default "text") (printf "linenos=true,hl_lines=%s" $stop.hl) }}
+        {{ end }}
+      </div>
+    </article>
+    {{ end }}
+    {{ end }}
+  </section>
+</div>
+{{ end }}

@@ -1,0 +1,49 @@
+{{ define "main" }}
+<div class="filepage">
+  {{ partial "tree.html" . }}
+  <section class="filecode">
+    <div class="filecode-head">
+      <div class="crumbs mono">{{ range (split .Params.path "/") }}<span>{{ . }}</span>{{ end }}</div>
+      <div class="filecode-title-row">
+        <h3 class="mono">{{ .Params.path }}</h3>
+        <a class="btn btn-secondary mono" href="{{ "/files/" | relURL }}">All files</a>
+      </div>
+      <div class="tag-row">
+        <span class="tag tag-outline mono">{{ .Params.lang }}</span>
+        <span class="tag tag-outline mono">{{ .Params.lines }} lines</span>
+        <span class="tag tag-outline mono">{{ .Params.commits }} commits</span>
+        <span class="tag tag-outline mono">edited {{ .Params.touched }}</span>
+        <span class="tag tag-neutral mono">{{ .Params.subsystem }}</span>
+      </div>
+    </div>
+    <div class="code-scroll">
+      {{ $opts := printf "linenos=true,hl_lines=%s" (.Params.hl | default "") }}
+      {{ highlight (.Params.code | default "") (.Params.lang | default "text") $opts }}
+    </div>
+  </section>
+  <aside class="commentary">
+    <h6>What this file is</h6>
+    <p class="card-body">{{ .Params.summary }}</p>
+
+    {{ with .Params.symbols }}
+    <div class="hr"></div>
+    <h6>Symbols</h6>
+    <ul class="sym-list mono">{{ range . }}<li><span class="sym-kind">{{ .kind }}</span>{{ .name }}</li>{{ end }}</ul>
+    {{ end }}
+
+    {{ with .Params.imports }}
+    <div class="hr"></div>
+    <h6>Imports</h6>
+    <ul class="dep-list mono">{{ range . }}<li><a class="link" href="{{ partial "fileurl" . }}">↳ {{ path.Base . }}</a></li>{{ end }}</ul>
+    {{ end }}
+
+    {{ with .Params.importedBy }}
+    <div class="hr"></div>
+    <h6>Imported by</h6>
+    <ul class="dep-list mono">{{ range . }}<li><a class="link" href="{{ partial "fileurl" . }}">↰ {{ path.Base . }}</a></li>{{ end }}</ul>
+    {{ end }}
+
+    {{ with .Content }}<div class="hr"></div><div class="prose">{{ . }}</div>{{ end }}
+  </aside>
+</div>
+{{ end }}

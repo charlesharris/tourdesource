@@ -1,0 +1,15 @@
+{{- $cur := .RelPermalink -}}
+{{ $files := where site.RegularPages "Section" "files" }}
+<nav class="tree mono" aria-label="Files">
+  <div class="tree-head">Files · churn</div>
+  {{ range $files.GroupByParam "folder" }}
+  <details open>
+    <summary>{{ .Key }}</summary>
+    <div class="tree-group">
+      {{ range .Pages.ByParam "path" }}
+      <a class="tree-file {{ if eq .RelPermalink $cur }}is-active{{ end }}" href="{{ .RelPermalink }}">{{ path.Base .Params.path }}</a>
+      {{ end }}
+    </div>
+  </details>
+  {{ end }}
+</nav>

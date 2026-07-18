@@ -1,0 +1,14 @@
+{{- $out := slice -}}
+{{- range (where site.RegularPages "Section" "files").ByParam "path" -}}
+  {{- $out = $out | append (dict "type" "File" "title" .Params.path "url" .RelPermalink "meta" (printf "%d lines" .Params.lines)) -}}
+{{- end -}}
+{{- range site.Data.symbols.symbols -}}
+  {{- $out = $out | append (dict "type" "Symbol" "title" .name "url" (partial "fileurl" .file) "meta" .kind) -}}
+{{- end -}}
+{{- range site.Data.tour.chapters -}}
+  {{- $ch := .title -}}
+  {{- range .stops -}}
+    {{- $out = $out | append (dict "type" "Tour" "title" .loc "url" (printf "%s#%s" ("tour/" | relURL) .id) "meta" $ch) -}}
+  {{- end -}}
+{{- end -}}
+{{- $out | jsonify -}}

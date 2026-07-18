@@ -1,0 +1,22 @@
+{{ define "main" }}
+<div class="explorer">
+  {{ partial "tree.html" . }}
+  <section class="explorer-main">
+    <h2>Explorer</h2>
+    <p class="lede">Browse the repository. Pick a file from the tree, or scan the index below — every row links to its code and commentary.</p>
+    <table class="table file-table">
+      <thead><tr><th>File</th><th>Subsystem</th><th class="num">Lines</th><th class="num">Commits</th></tr></thead>
+      <tbody>
+        {{ range (where site.RegularPages "Section" "files").ByParam "path" }}
+        <tr class="row-link" onclick="location.href='{{ .RelPermalink }}'">
+          <td class="mono"><a href="{{ .RelPermalink }}">{{ .Params.path }}</a></td>
+          <td>{{ .Params.subsystem }}</td>
+          <td class="num mono">{{ .Params.lines }}</td>
+          <td class="num mono">{{ .Params.commits }}</td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+  </section>
+</div>
+{{ end }}

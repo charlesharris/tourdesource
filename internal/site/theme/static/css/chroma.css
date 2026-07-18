@@ -1,0 +1,46 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   chroma.css — syntax theme for Hugo's highlighter, tuned to the Classical
+   warm ground. Code stays mostly ink with a small warm/cool accent set, so it
+   reads as part of the page rather than a pasted-in terminal. Table line-number
+   layout (markup.highlight.lineNumbersInTable = true).
+   ───────────────────────────────────────────────────────────────────────── */
+.chroma {
+  font-family: var(--font-mono);
+  font-size: 12.5px; line-height: 1.7;
+  background: transparent; margin: 0; padding: var(--space-3) 0;
+  -webkit-text-size-adjust: none;
+}
+.chroma .lntable { border-spacing: 0; padding: 0; margin: 0; border: 0; width: 100%; }
+.chroma .lntd { vertical-align: top; padding: 0; margin: 0; border: 0; }
+.chroma .lnt {
+  display: block; padding: 0 var(--space-3); color: var(--color-neutral-400);
+  user-select: none; text-align: right;
+}
+.chroma .line { display: block; padding: 0 var(--space-4); }
+.chroma .hl {
+  background: var(--color-accent-100);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+.chroma .lntable .hl { display: block; }
+
+/* Tokens */
+.chroma .c, .chroma .ch, .chroma .cm, .chroma .c1, .chroma .cs,
+.chroma .cp, .chroma .cpf { color: var(--color-neutral-600); font-style: italic; }
+.chroma .k, .chroma .kc, .chroma .kd, .chroma .kn, .chroma .kp,
+.chroma .kr, .chroma .kt { color: #a4302a; }
+.chroma .s, .chroma .sa, .chroma .sb, .chroma .sc, .chroma .dl,
+.chroma .sd, .chroma .s2, .chroma .se, .chroma .sh, .chroma .si,
+.chroma .sx, .chroma .sr, .chroma .s1, .chroma .ss { color: var(--color-accent-800); }
+.chroma .m, .chroma .mb, .chroma .mf, .chroma .mh, .chroma .mi,
+.chroma .il, .chroma .mo, .chroma .no { color: #0b5cad; }
+.chroma .nf, .chroma .fm { color: #6b4bab; }
+.chroma .nb, .chroma .bp { color: #6b4bab; }
+.chroma .nc, .chroma .nn, .chroma .na, .chroma .nx, .chroma .n,
+.chroma .p, .chroma .py { color: var(--color-text); }
+.chroma .nt { color: #0b5cad; }
+.chroma .nv, .chroma .vc, .chroma .vg, .chroma .vi, .chroma .vm { color: #8a4b0a; }
+.chroma .o, .chroma .ow { color: var(--color-neutral-700); }
+.chroma .nd, .chroma .ni { color: #6b4bab; }
+.chroma .err { color: #a4302a; }
+.chroma .gd { color: #a4302a; background: #f7e4e2; }
+.chroma .gi { color: #2f6b34; background: #e2f0e4; }

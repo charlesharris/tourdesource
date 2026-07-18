@@ -1,0 +1,42 @@
+{{ define "main" }}
+{{ $m := site.Data.manifest }}
+<div class="page page-overview">
+  <p class="kicker mono">Guided codebase</p>
+  <h1 class="display">{{ $m.repo.title }}</h1>
+  <p class="lede">{{ $m.repo.blurb }}</p>
+
+  <div class="stat-row">
+    {{ range $m.stats }}
+    <div class="card stat"><div class="stat-value mono">{{ .value }}</div><div class="stat-label mono">{{ .label }}</div></div>
+    {{ end }}
+  </div>
+
+  <div class="start-row">
+    <a class="card start" href="{{ "/tour/" | relURL }}"><h4>Take the guided tour</h4><p>A curated path through the codebase in chapters and stops, code beside commentary.</p><span class="start-cta mono">Start tour →</span></a>
+    <a class="card start" href="{{ "/architecture/" | relURL }}"><h4>Explore the architecture</h4><p>See the eight subsystems and how they depend on each other, then drill in.</p><span class="start-cta mono">Open map →</span></a>
+    <a class="card start" href="{{ "/symbols/" | relURL }}"><h4>Browse by symbol</h4><p>Jump straight to a class, module or method — Issue, User, Query and more.</p><span class="start-cta mono">Open index →</span></a>
+  </div>
+
+  <div class="section-head"><h6>Subsystems · {{ len $m.subsystems }}</h6><a class="btn btn-ghost mono" href="{{ "/architecture/" | relURL }}">Architecture map →</a></div>
+  <div class="sub-grid">
+    {{ range $m.subsystems }}
+    <a class="card sub-card" href="{{ partial "fileurl" .entry }}">
+      <div class="sub-card-head"><span class="card-title">{{ .name }}</span><span class="mono text-muted">{{ .files }} files</span></div>
+      <p class="card-body">{{ .desc }}</p>
+      <div class="churn"><span style="width: {{ .churn }}%"></span></div>
+      <div class="mono text-muted sub-card-foot">{{ .commits }} commits</div>
+    </a>
+    {{ end }}
+  </div>
+
+  <h6 class="section-head-solo">Where things live</h6>
+  <div class="card dirbar-card">
+    <div class="dirbar">
+      {{ range $m.dirs }}<span class="dirbar-seg" style="width: {{ .pct }}%" title="{{ .name }} — {{ .count }}"></span>{{ end }}
+    </div>
+    <div class="dir-legend mono">
+      {{ range $m.dirs }}<span class="dir-item"><span class="dir-dot"></span>{{ .name }} <span class="text-muted">{{ .count }}</span></span>{{ end }}
+    </div>
+  </div>
+</div>
+{{ end }}

@@ -1,0 +1,34 @@
+# Codebase Explorer — Hugo site config
+# Generated static tour of a scanned repository. The Go wrapper writes
+# data/*.json and content/files/*.md, then runs `hugo`.
+
+baseURL = "/"
+# `locale` replaced `languageCode` in Hugo 0.158.
+locale = "en-us"
+title = "Codebase Explorer"
+
+# Pretty, relative URLs so the built site is self-contained and portable.
+relativeURLs = true
+canonifyURLs = false
+uglyURLs = false
+
+disableKinds = ["taxonomy", "term", "RSS", "sitemap"]
+
+# Home also emits a JSON search index consumed by the command palette (⌘K).
+[outputs]
+  home = ["HTML", "JSON"]
+
+[markup]
+  [markup.highlight]
+    # Emit CSS classes (styled by static/css/chroma.css) rather than inline
+    # styles, so syntax colors stay themeable and match the Classical ground.
+    noClasses = false
+    lineNos = false          # per-call: file pages pass lineNos=true explicitly
+    lineNumbersInTable = true
+    tabWidth = 2
+  [markup.goldmark.renderer]
+    unsafe = true            # commentary bodies may contain inline HTML
+
+[params]
+  # Surfaced in the footer / meta; the wrapper can override per build.
+  generator = "repo-tour"

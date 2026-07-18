@@ -1,0 +1,14 @@
+{{ $m := site.Data.manifest }}
+<header class="topbar">
+  <a class="topbar-brand" href="{{ "/" | relURL }}">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">{{ $m.repo.name }}</span>
+  </a>
+  <span class="mono chip">@ {{ $m.repo.commit }}</span>
+  <span class="mono text-muted">{{ $m.repo.lang }}</span>
+  <span class="topbar-spacer"></span>
+  <button class="palette-trigger" data-act="palette-open" type="button">
+    <span>Search files, symbols, tours…</span>
+    <kbd class="mono">⌘K</kbd>
+  </button>
+</header>
