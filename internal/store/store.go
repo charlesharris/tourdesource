@@ -283,6 +283,16 @@ func (s *Store) PutFindings(findings []protocol.Finding) error {
 	})
 }
 
+// ClearFindings removes every stored finding. An analyze run replaces the
+// previous run's results wholesale rather than accumulating duplicates of them;
+// incremental, per-analyzer refresh is TDS-26's findings cache.
+func (s *Store) ClearFindings() error {
+	if _, err := s.db.Exec(`DELETE FROM findings`); err != nil {
+		return fmt.Errorf("clear findings: %w", err)
+	}
+	return nil
+}
+
 // inTx runs fn inside a transaction, committing on success and rolling back on
 // error. what labels the operation in wrapped errors.
 func (s *Store) inTx(what string, fn func(*sql.Tx) error) error {
