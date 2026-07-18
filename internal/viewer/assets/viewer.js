@@ -35,9 +35,13 @@
 
   if (manifest.intro) rail.appendChild(html("div", "tds-intro", manifest.intro));
 
-  (manifest.chapters || []).forEach(function (ch) {
+  var chapters = manifest.chapters || [];
+  if (chapters.length) rail.appendChild(renderOutline(chapters));
+
+  chapters.forEach(function (ch, i) {
     var section = document.createElement("section");
     section.className = "tds-chapter";
+    section.id = "chapter-" + (i + 1);
     var h2 = document.createElement("h2");
     h2.textContent = ch.title || "";
     section.appendChild(h2);
@@ -45,6 +49,68 @@
     (ch.stops || []).forEach(function (st) { section.appendChild(renderStop(st)); });
     rail.appendChild(section);
   });
+
+  // The outline is the tour's table of contents. On a whole-project tour the
+  // chapters are subsystems, so this is the reader's map of what is covered and
+  // their way to jump straight to the part they came for.
+  function renderOutline(chs) {
+    var nav = document.createElement("nav");
+    nav.className = "tds-toc";
+    nav.setAttribute("aria-label", "Tour contents");
+
+    var h2 = document.createElement("h2");
+    h2.className = "tds-toc-title";
+    h2.textContent = "Contents";
+    nav.appendChild(h2);
+
+    var ol = document.createElement("ol");
+    chs.forEach(function (ch, i) {
+      var li = document.createElement("li");
+      var a = document.createElement("a");
+      a.href = "#chapter-" + (i + 1);
+      a.textContent = ch.title || "Chapter " + (i + 1);
+      a.addEventListener("click", function (e) {
+        e.preventDefault();
+        goToChapter(i);
+      });
+      li.appendChild(a);
+
+      var n = countStops(ch.stops);
+      var count = document.createElement("span");
+      count.className = "tds-toc-count";
+      count.textContent = n === 1 ? "1 stop" : n + " stops";
+      li.appendChild(count);
+
+      ol.appendChild(li);
+    });
+    nav.appendChild(ol);
+    return nav;
+  }
+
+  // Counts nested detour stops too, so the outline reflects how much there is
+  // to read rather than just the top-level count.
+  function countStops(stops) {
+    var n = 0;
+    (stops || []).forEach(function (st) {
+      n += 1;
+      (st.detours || []).forEach(function (d) { n += countStops(d.stops); });
+    });
+    return n;
+  }
+
+  // Jumping to a chapter activates its first stop, so the code pane follows the
+  // narrative instead of going stale against a heading.
+  function goToChapter(i) {
+    var section = rail.querySelector("#chapter-" + (i + 1));
+    if (section) section.scrollIntoView({ block: "start" });
+    var first = firstStopOf(chapters[i]);
+    if (first) activate(first, { scroll: false });
+  }
+
+  function firstStopOf(ch) {
+    var stops = (ch && ch.stops) || [];
+    return stops.length ? stops[0].id : null;
+  }
 
   function renderStop(st) {
     stopsById[st.id] = st;
@@ -78,17 +144,23 @@
     return wrap;
   }
 
-  function activate(id) {
+  function activate(id, opts) {
     var st = stopsById[id];
     if (!st) return;
+    opts = opts || {};
 
     var prev = rail.querySelector(".tds-stop.tds-active");
     if (prev) prev.classList.remove("tds-active");
     var node = rail.querySelector('[data-stop-id="' + cssEscape(id) + '"]');
     if (node) {
       node.classList.add("tds-active");
-      node.scrollIntoView({ block: "nearest" });
+      if (opts.scroll !== false) node.scrollIntoView({ block: "nearest" });
     }
+
+    // Keep the URL pointing at the current stop so it can be copied and shared.
+    // replaceState, not pushState: stepping through a tour with the arrow keys
+    // should not bury the page the reader arrived from under a hundred entries.
+    setHash("stop-" + id);
 
     var a = st.anchor || {};
     if (!a.resolved || !code[a.path]) {
@@ -146,5 +218,55 @@
   }
   function cssEscape(s) { return String(s).replace(/["\\]/g, "\\$&"); }
 
-  if (order.length) activate(order[0]);
+  // --- deep links ---------------------------------------------------------
+  //
+  // A stop's URL is "#stop-<id>" and a chapter's is "#chapter-<n>" — the same
+  // fragments the JS-off rendering uses as element ids, so a shared link lands
+  // in the same place whether or not the script runs.
+
+  var suppressHashChange = false;
+
+  function setHash(frag) {
+    if (("#" + frag) === location.hash) return;
+    suppressHashChange = true;
+    if (window.history && history.replaceState) {
+      history.replaceState(null, "", "#" + frag);
+    } else {
+      location.hash = frag; // ancient browsers: fall back to a real hash write
+    }
+    // The flag guards the hashchange the write itself triggers; clear it after
+    // that event would have fired rather than leaving it latched on.
+    setTimeout(function () { suppressHashChange = false; }, 0);
+  }
+
+  // applyHash restores the state a fragment names. Returns false when the
+  // fragment names nothing we know, so the caller can fall back.
+  function applyHash() {
+    var frag = decodeURIComponent(String(location.hash || "").replace(/^#/, ""));
+    if (!frag) return false;
+
+    var m = /^chapter-(\d+)$/.exec(frag);
+    if (m) {
+      var i = parseInt(m[1], 10) - 1;
+      if (i >= 0 && i < chapters.length) {
+        goToChapter(i);
+        return true;
+      }
+      return false;
+    }
+    var id = frag.replace(/^stop-/, "");
+    if (stopsById[id]) {
+      activate(id);
+      return true;
+    }
+    return false;
+  }
+
+  window.addEventListener("hashchange", function () {
+    if (suppressHashChange) return;
+    applyHash();
+  });
+
+  // Restore from the URL, else open on the first stop.
+  if (!applyHash() && order.length) activate(order[0]);
 })();

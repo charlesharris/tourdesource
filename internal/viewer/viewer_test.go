@@ -141,3 +141,119 @@ func TestGenerateDemo(t *testing.T) {
 	}
 	t.Logf("wrote demo bundle to %s", out)
 }
+
+// TestStaticRenderingIsReadableWithoutJS covers the JS-off half of TDS-21. The
+// prose is the tour; a reader with scripting disabled should get the narrative,
+// not an empty <div>.
+func TestStaticRenderingIsReadableWithoutJS(t *testing.T) {
+	page := string(buildDemo(t))
+
+	// The app root must carry real content before any script runs.
+	start := strings.Index(page, `<div id="tds-app">`)
+	end := strings.Index(page, `<script type="application/json"`)
+	if start < 0 || end < 0 || end < start {
+		t.Fatal("could not locate the app root ahead of the data script")
+	}
+	static := page[start:end]
+
+	for _, want := range []string{
+		"Welcome to the",                // tour intro
+		"The aggregate root",            // chapter title
+		"is the whole domain",           // stop prose
+		"Invoice#finalize",              // resolved anchor label
+		"Debugging a stuck invoice",     // detour title
+		"The scope used by the nightly", // nested detour stop prose
+	} {
+		if !strings.Contains(static, want) {
+			t.Errorf("static rendering is missing %q", want)
+		}
+	}
+}
+
+// TestOutlineListsChapters covers the outline half of TDS-21: without it a
+// whole-project tour is one long scroll with no way to see what it covers.
+func TestOutlineListsChapters(t *testing.T) {
+	m := &manifest.Manifest{
+		Title: "Whole project",
+		Chapters: []manifest.Chapter{
+			{
+				Title: "Authorization",
+				Stops: []manifest.Stop{
+					{ID: "s1", Prose: "one"},
+					{ID: "s2", Prose: "two", Detours: []manifest.Detour{
+						// Nested stops count toward the chapter total: the outline
+						// should reflect how much there is to read.
+						{Title: "aside", Stops: []manifest.Stop{{ID: "s3", Prose: "three"}}},
+					}},
+				},
+			},
+			{Title: "Rendering", Stops: []manifest.Stop{{ID: "s4", Prose: "four"}}},
+		},
+	}
+	out, err := Render(Input{Manifest: m})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	page := string(out)
+
+	if !strings.Contains(page, `class="tds-toc"`) {
+		t.Error("no outline rendered")
+	}
+	if !strings.Contains(page, `href="#chapter-1"`) || !strings.Contains(page, `href="#chapter-2"`) {
+		t.Error("outline must link every chapter by fragment")
+	}
+	if !strings.Contains(page, "3 stops") {
+		t.Error("chapter 1 should count its detour stop: want '3 stops'")
+	}
+	if !strings.Contains(page, "1 stop") {
+		t.Error("a single-stop chapter should read '1 stop', not '1 stops'")
+	}
+
+	// The fragments the outline links to must exist as ids in the same document,
+	// so the links work with JavaScript disabled.
+	for _, id := range []string{`id="chapter-1"`, `id="chapter-2"`, `id="stop-s1"`, `id="stop-s3"`} {
+		if !strings.Contains(page, id) {
+			t.Errorf("missing anchor target %s", id)
+		}
+	}
+}
+
+// TestOutlineEscapesChapterTitles keeps an author-supplied title from breaking
+// out of the outline markup.
+func TestOutlineEscapesChapterTitles(t *testing.T) {
+	m := &manifest.Manifest{
+		Title: "x",
+		Chapters: []manifest.Chapter{{
+			Title: `Auth <script>alert(1)</script> & "quotes"`,
+			Stops: []manifest.Stop{{ID: "s1", Prose: "p"}},
+		}},
+	}
+	out, err := Render(Input{Manifest: m})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if strings.Contains(string(out), "<script>alert(1)</script>") {
+		t.Error("chapter title was not escaped")
+	}
+	if !strings.Contains(string(out), "&amp;") {
+		t.Error("expected the ampersand to be escaped")
+	}
+}
+
+// TestViewerScriptSupportsDeepLinks is TDS-21's acceptance criterion. The script
+// is inlined rather than executed here, so this asserts the wiring is present
+// and consistent with the fragments the static rendering emits.
+func TestViewerScriptSupportsDeepLinks(t *testing.T) {
+	js := string(Assets()["viewer.js"])
+	for _, want := range []string{
+		"hashchange",   // reacts to fragment changes
+		"replaceState", // updates the URL without flooding history
+		"applyHash",    // restores state from the URL on load
+		"stop-",        // the stop fragment scheme
+		"chapter-",     // the chapter fragment scheme
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("viewer.js is missing deep-link support: %q", want)
+		}
+	}
+}

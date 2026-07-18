@@ -34,13 +34,20 @@ and works offline.
 # 1. Build the structural map of a repository (symbols, imports, git signals)
 tds map .
 
-# 2. Author a tour (soon: `tds draft` generates a curated-ready draft for you)
-$EDITOR onboarding.tour.md
+# 2. Generate a tour skeleton from the map, then curate the prose
+tds draft .
+$EDITOR .tds/myproject.tour.md
 
 # 3. Compile to a self-contained bundle and open it
-tds build onboarding.tour.md
+tds build .tds/myproject.tour.md
 open .tds/tour/index.html
 ```
+
+`tds draft` does the structural work — it ranks your entrypoints, landmarks and
+git hotspots, pours them into the onboarding template, and emits a `.tour.md`
+whose anchors all resolve. What it leaves you is the prose: every stop carries a
+`TODO` and the evidence tds used to pick it, so curating means fixing and pruning
+rather than starting from a blank page.
 
 A tour source file is Markdown with light directives:
 
@@ -69,6 +76,59 @@ Anchors are **symbol-first** with a `path:line-start-end` fallback; they resolve
 against the map, so ordinary edits (code shifting around) don't break them —
 only genuine renames/deletes do, and `tds check` (coming) reports that drift.
 
+## Touring a repository you don't own
+
+By default every stage writes into `<repo>/.tds/`. That's convenient for your own
+project, but it dirties a checkout you may not want to touch. Every stage takes
+an explicit output path, so keep the whole tour **out of tree** and leave the
+subject repository untouched:
+
+```sh
+REPO=~/src/redmine                 # the repository being toured
+WORK=~/tours/redmine               # everything tds produces lives here
+mkdir -p "$WORK"
+
+# 1. Map -> $WORK/map/{map.sqlite,map.json}
+tds map "$REPO" --out "$WORK/map"
+
+# 2. Draft -> $WORK/redmine.tour.md
+tds draft "$REPO" --map-dir "$WORK/map" --out "$WORK/redmine.tour.md"
+
+# 3. Curate the prose (this is the part only a human can do)
+$EDITOR "$WORK/redmine.tour.md"
+
+# 4. Build -> $WORK/site/index.html
+tds build "$WORK/redmine.tour.md" \
+    --repo "$REPO" \
+    --map  "$WORK/map/map.sqlite" \
+    --out  "$WORK/site"
+
+open "$WORK/site/index.html"
+```
+
+This leaves a self-describing layout, and `git status` in `$REPO` stays clean:
+
+```
+~/tours/redmine/
+├── map/
+│   ├── map.sqlite          # the structural index
+│   └── map.json            # same data, diffable
+├── redmine.tour.md         # the tour source — the thing you edit and version
+└── site/
+    ├── index.html          # the shareable tour (open this)
+    ├── manifest.json       # compiled tour + resolved anchors
+    └── repo/               # the pinned source snapshot the viewer reads
+```
+
+The `.tour.md` is the artifact worth keeping in version control — it's the
+curation. The map and the bundle are both reproducible from it plus the repo at
+the pinned commit.
+
+**Scale.** Redmine (2,264 files, ~1,100 Ruby) maps in under two seconds and
+yields ~13k symbols. The built bundle embeds the whole repo at the pinned commit,
+so it runs to tens of MB — that's the cost of a tour that works offline with no
+server.
+
 ## Pipeline
 
 `tds` is a small Go binary that orchestrates discrete, inspectable stages.
@@ -79,8 +139,8 @@ and ships as one static binary.
 | Stage | What it does | Status |
 |---|---|---|
 | `tds map` | Structural index: symbols, imports, Rails entrypoints, git signals → SQLite + JSON | ✅ working |
-| `tds analyze` | Run language tooling (linters, types, coverage) into normalized findings | 🚧 planned (M3) |
-| `tds draft` | AI-assisted tour draft to curate (drives Claude over your subscription) | 🚧 planned (M4) |
+| `tds analyze` | Run language tooling (linters, types, coverage) into normalized findings | 🚧 pipeline built, no command yet (M3) |
+| `tds draft` | Generate a curated-ready tour skeleton from the map | ✅ working (deterministic; AI passes are M4) |
 | `tds build` | Compile a tour into a self-contained static bundle | ✅ working |
 | `tds check` | Re-resolve anchors against HEAD and report drift | 🚧 planned |
 
@@ -89,9 +149,15 @@ next. A tree-sitter fallback covers other languages with line-range anchors.
 
 ## Status
 
-Early, but the core loop works end to end: **`tds map` → author a `.tour.md` →
-`tds build` → open a real, shareable tour.** The Markdown is hand-written for now;
-`tds draft` (milestone M4) will generate it for you. See
+Early, but the core loop works end to end: **`tds map` → `tds draft` → curate →
+`tds build` → open a real, shareable tour.**
+
+Drafting is deterministic today: it decides *what to point at* from the map's
+entrypoints, git signals and symbol ranking, and every anchor it emits names a
+symbol that exists — the same constraint that will keep the M4 AI passes from
+inventing code. What it doesn't do is write the prose. Saying *why* a landmark
+matters is judgment, and a machine-written paragraph that sounds right but isn't
+is worse than a `TODO`. See
 [`docs/design.md`](docs/design.md) for the full design and
 [`docs/implementation-plan.md`](docs/implementation-plan.md) for the roadmap.
 

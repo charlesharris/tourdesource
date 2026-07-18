@@ -112,3 +112,52 @@ body {
     --accent: #4493f8; --accent-soft: #121d2f; --code-bg: #0d1117; --hl: #3f2e00;
   }
 }
+
+/* Outline — the tour's table of contents. On a whole-project tour the chapters
+   are the subsystems, so this is the reader's map of what the tour covers. */
+.tds-toc {
+  margin: 0 0 22px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--code-bg);
+}
+.tds-toc-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tds-toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: tds-toc;
+}
+.tds-toc li {
+  counter-increment: tds-toc;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 14px;
+}
+.tds-toc li::before {
+  content: counter(tds-toc) ".";
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 1.4em;
+}
+.tds-toc a {
+  color: var(--accent);
+  text-decoration: none;
+  flex: 1;
+}
+.tds-toc a:hover { text-decoration: underline; }
+.tds-toc-count {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}

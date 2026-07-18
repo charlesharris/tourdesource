@@ -36,7 +36,7 @@ See docs/design.md and docs/implementation-plan.md for the full picture.`,
 	root.AddCommand(
 		newMapCmd(),
 		newStageCmd("analyze", "Run language tooling into normalized findings"),
-		newStageCmd("draft", "Generate an AI-assisted tour draft to curate"),
+		newDraftCmd(),
 		newBuildCmd(),
 		newStageCmd("check", "Report tour anchor drift against HEAD"),
 	)
