@@ -70,6 +70,17 @@ Narrated prose is a *first draft*, not a finished tour — the model can write
 something fluent and wrong. The generated file says so at the top. Read it before
 you share it.
 
+Each run saves the assistant's raw response, and stop ids are derived from
+anchors, so a narrated draft is **reproducible without re-spending tokens**:
+
+```sh
+tds draft . --narrate-from .tds/narrate/narrate-1-001-out.json
+```
+
+Useful for regenerating after you tweak the template, and for recovering a draft
+you overwrote. The saved response goes through the same validation gate as a
+live one.
+
 A tour source file is Markdown with light directives:
 
 ```markdown

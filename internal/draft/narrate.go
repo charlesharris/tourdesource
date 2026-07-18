@@ -42,6 +42,13 @@ type NarrateOptions struct {
 	// otherwise crowd out every other stop in the batch.
 	MaxExcerptLines int
 
+	// FromFile replays a previously saved assistant response instead of asking
+	// again. Stop ids are derived from anchors and so are stable across runs,
+	// which makes a saved response re-playable: it recovers a clobbered tour,
+	// makes a narrated draft reproducible, and lets the merge and validation
+	// path be debugged without spending tokens.
+	FromFile string
+
 	// Assistant injects a stand-in; nil starts Claude in tmux.
 	Assistant orchestration.Assistant
 
@@ -99,6 +106,12 @@ func narrate(
 		return 0, nil
 	}
 
+	// Replay path: no assistant, no tmux, no tokens — but the same validation
+	// gate, so a hand-edited or stale response cannot smuggle anything in.
+	if opts.FromFile != "" {
+		return replay(plan, opts, logf, warnf)
+	}
+
 	assistant := opts.Assistant
 	if assistant == nil {
 		a, err := assistantFor(ctx, opts)
@@ -149,6 +162,37 @@ func narrate(
 	}
 
 	return narrated, nil
+}
+
+// replay merges a saved response file, applying the same gate a live response
+// gets. Every stop in the plan is treated as requested, since a saved file may
+// have come from a run that batched differently.
+func replay(plan *Plan, opts NarrateOptions, logf, warnf func(string, ...any)) (int, error) {
+	raw, err := os.ReadFile(opts.FromFile)
+	if err != nil {
+		return 0, fmt.Errorf("reading saved narration: %w", err)
+	}
+	var resp narrateResponse
+	if err := orchestration.DecodeJSON(raw, &resp); err != nil {
+		return 0, fmt.Errorf("saved narration in %s is unusable: %w", opts.FromFile, err)
+	}
+
+	byID := plan.stopByID()
+	requested := map[string]bool{}
+	for id := range byID {
+		requested[id] = true
+	}
+
+	accepted, rejected := acceptNarration(resp.Stops, requested, byID)
+	for _, r := range rejected {
+		warnf("narration replay: %s", r)
+	}
+	logf("replayed %d of %d stops from %s", accepted, len(byID), opts.FromFile)
+	if accepted == 0 {
+		return 0, fmt.Errorf("no stops in %s matched this plan: the tour structure has "+
+			"changed since it was saved, so the prose no longer lines up", opts.FromFile)
+	}
+	return accepted, nil
 }
 
 // acceptNarration is the validation gate. It merges prose for stops we asked

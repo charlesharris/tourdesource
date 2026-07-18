@@ -13,6 +13,7 @@ func newDraftCmd() *cobra.Command {
 	var repo, mapDir, out, audience, workDir string
 	var landmarks int
 	var doNarrate bool
+	var narrateFrom string
 	var narrateTimeout time.Duration
 
 	cmd := &cobra.Command{
@@ -34,11 +35,12 @@ Run ` + "`tds map`" + ` first to produce the map.`,
 			}
 
 			var narrateOpts *draft.NarrateOptions
-			if doNarrate {
+			if doNarrate || narrateFrom != "" {
 				narrateOpts = &draft.NarrateOptions{
-					Root:    repo,
-					WorkDir: workDir,
-					Timeout: narrateTimeout,
+					Root:     repo,
+					WorkDir:  workDir,
+					Timeout:  narrateTimeout,
+					FromFile: narrateFrom,
 				}
 			}
 
@@ -60,6 +62,15 @@ Run ` + "`tds map`" + ` first to produce the map.`,
 				return err
 			}
 			printDraftSummary(cmd, res)
+
+			// Narration that produced nothing is a failed run, not a quiet
+			// fallback. It still wrote a usable TODO skeleton, but the caller
+			// asked for prose and got none — and the write may have replaced a
+			// previously narrated file, so this must not exit 0.
+			if res.NarrateRequested && res.Narrated == 0 && res.Stops > 0 {
+				return fmt.Errorf("narration produced nothing: %d stops still have TODO prose "+
+					"(see the warnings above; %s was still written)", res.Stops, res.Path)
+			}
 			return nil
 		},
 	}
@@ -71,6 +82,8 @@ Run ` + "`tds map`" + ` first to produce the map.`,
 	cmd.Flags().IntVar(&landmarks, "landmarks", 6, "how many landmark stops to propose")
 	cmd.Flags().BoolVar(&doNarrate, "narrate", false,
 		"write the prose with an assistant instead of leaving TODOs (drives Claude in tmux; spends tokens on your subscription)")
+	cmd.Flags().StringVar(&narrateFrom, "narrate-from", "",
+		"replay a saved assistant response (the *-out.json from a previous --narrate run) instead of asking again")
 	cmd.Flags().StringVar(&workDir, "narrate-workdir", "",
 		"where narration prompt/answer files are written (default: a temp dir)")
 	cmd.Flags().DurationVar(&narrateTimeout, "narrate-timeout", 10*time.Minute,
@@ -93,7 +106,10 @@ func printDraftSummary(cmd *cobra.Command, res *draft.Result) {
 	fmt.Fprintf(out, "  stops:       %d (%d symbol-anchored)\n", res.Stops, res.Anchors)
 	fmt.Fprintf(out, "  landmarks:   %d\n", res.Landmarks)
 	fmt.Fprintf(out, "  hotspots:    %d\n", res.Hotspots)
-	if res.Narrated > 0 || res.Stops == 0 {
+	// Always report narration when it was asked for. Reporting it only on
+	// success made a total failure look like an ordinary draft — the summary
+	// contradicted the warning above it.
+	if res.NarrateRequested {
 		fmt.Fprintf(out, "  narrated:    %d of %d stops\n", res.Narrated, res.Stops)
 	}
 	fmt.Fprintf(out, "  wrote:       %s\n", res.Path)

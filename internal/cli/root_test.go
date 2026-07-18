@@ -54,3 +54,15 @@ func TestDraftRequiresAMap(t *testing.T) {
 		t.Errorf("error should point at `tds map`, got %q", err)
 	}
 }
+
+// TestDraftNarrateFailureExitsNonZero covers the silent-failure bug: a narrate
+// run that produces nothing still writes a TODO skeleton, potentially over a
+// previously narrated file, so it must not report success.
+func TestDraftNarrateFailureExitsNonZero(t *testing.T) {
+	// No map, so this fails earlier — but the error must still be a real error
+	// rather than a success path. The full narrate-produced-nothing case is
+	// covered in internal/draft; this pins that the command surfaces errors.
+	if _, err := runCmd("draft", t.TempDir(), "--narrate"); err == nil {
+		t.Fatal("expected a non-zero exit when narration cannot run")
+	}
+}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -325,4 +327,141 @@ func TestBannerReflectsNarration(t *testing.T) {
 	if !strings.Contains(narrated, "has not been reviewed") {
 		t.Error("a narrated draft must warn that the prose is unreviewed")
 	}
+}
+
+// TestNarrateRequestedIsRecorded lets the caller tell "narration produced
+// nothing" apart from "narration was never asked for". A stale run once timed
+// out, narrated zero stops, overwrote a good narrated tour with TODOs and
+// exited 0 — the summary was indistinguishable from a plain draft.
+func TestNarrateRequestedIsRecorded(t *testing.T) {
+	root := newFixtureMap(t)
+
+	plain, _ := generate(t, root, Options{})
+	if plain.NarrateRequested {
+		t.Error("a plain draft must not claim narration was requested")
+	}
+
+	failed, _ := generate(t, root, Options{
+		Narrate: &NarrateOptions{Assistant: failingAssistant{}, Root: root, WorkDir: t.TempDir()},
+		Warnf:   func(string, ...any) {},
+	})
+	if !failed.NarrateRequested {
+		t.Error("a failed narration must still record that it was requested")
+	}
+	if failed.Narrated != 0 {
+		t.Errorf("narrated = %d, want 0", failed.Narrated)
+	}
+	// This pair — requested but zero narrated — is what the command turns into
+	// a non-zero exit.
+}
+
+// TestNarrateFromReplaysASavedResponse covers the replay path. Stop ids derive
+// from anchors, so a saved response re-applies to an identically-planned tour —
+// which is what made a clobbered narrated tour recoverable without re-spending
+// tokens.
+func TestNarrateFromReplaysASavedResponse(t *testing.T) {
+	root := newFixtureMap(t)
+
+	// Narrate once, capturing what the assistant said.
+	a := &scriptedAssistant{reply: answerAll}
+	live, liveMD := generate(t, root, Options{
+		Narrate: &NarrateOptions{Assistant: a, Root: root, WorkDir: t.TempDir()},
+	})
+
+	saved := filepath.Join(t.TempDir(), "out.json")
+	stops := map[string]string{}
+	for _, id := range stopIDsIn(strings.Join(a.prompts, "\n")) {
+		stops[id] = "Narrated prose for " + id + "."
+	}
+	b, _ := json.Marshal(narrateResponse{Stops: stops})
+	if err := os.WriteFile(saved, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Replaying must reproduce the same document, without an assistant.
+	replayed, replayMD := generate(t, root, Options{
+		Narrate: &NarrateOptions{FromFile: saved, Root: root},
+	})
+
+	if replayed.Narrated != live.Narrated {
+		t.Errorf("replayed %d stops, live run narrated %d", replayed.Narrated, live.Narrated)
+	}
+	if replayMD != liveMD {
+		t.Error("replaying a saved response should reproduce the same document")
+	}
+	if strings.Contains(replayMD, "TODO:") {
+		t.Error("a fully replayed draft should have no TODOs")
+	}
+}
+
+// TestNarrateFromAppliesTheValidationGate — a saved file is just as untrusted as
+// a live response. It can be hand-edited, or stale.
+func TestNarrateFromAppliesTheValidationGate(t *testing.T) {
+	root := newFixtureMap(t)
+	saved := filepath.Join(t.TempDir(), "out.json")
+
+	// One valid stop id (taken from a real plan) plus junk that must be refused.
+	planned, _ := generate(t, root, Options{})
+	realID := anchorsToIDs(t, planned)
+
+	b, _ := json.Marshal(narrateResponse{Stops: map[string]string{
+		realID:         "Legitimate prose.",
+		"made-up-stop": "Prose for a stop that does not exist.",
+	}})
+	if err := os.WriteFile(saved, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var warnings []string
+	_, md := generate(t, root, Options{
+		Narrate: &NarrateOptions{FromFile: saved, Root: root},
+		Warnf:   func(f string, a ...any) { warnings = append(warnings, fmt.Sprintf(f, a...)) },
+	})
+
+	if strings.Contains(md, "does not exist") {
+		t.Error("a saved response's unknown stop was merged")
+	}
+	if !strings.Contains(md, "Legitimate prose.") {
+		t.Error("the valid stop should still be applied")
+	}
+	if !containsSubstring(warnings, "unknown stop") {
+		t.Errorf("the rejection should be reported, got %v", warnings)
+	}
+}
+
+// TestNarrateFromRejectsAMismatchedPlan fails loudly rather than silently
+// producing a TODO draft when the saved prose no longer lines up.
+func TestNarrateFromRejectsAMismatchedPlan(t *testing.T) {
+	root := newFixtureMap(t)
+	saved := filepath.Join(t.TempDir(), "out.json")
+	b, _ := json.Marshal(narrateResponse{Stops: map[string]string{"nothing-matches-this": "x"}})
+	if err := os.WriteFile(saved, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Generate(context.Background(), Options{
+		Root:    root,
+		Narrate: &NarrateOptions{FromFile: saved, Root: root},
+		Warnf:   func(string, ...any) {},
+	})
+	if err == nil {
+		t.Fatal("a saved response matching no stop must be an error")
+	}
+	if !strings.Contains(err.Error(), "no longer line") && !strings.Contains(err.Error(), "matched this plan") {
+		t.Errorf("error = %q, should explain the mismatch", err)
+	}
+}
+
+// anchorsToIDs returns the first stop id of a planned draft.
+func anchorsToIDs(t *testing.T, res *Result) string {
+	t.Helper()
+	b, err := os.ReadFile(res.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchors := anchorsIn(string(b))
+	if len(anchors) == 0 {
+		t.Fatal("no anchors in the planned draft")
+	}
+	return makeID(anchors[0], map[string]bool{})
 }

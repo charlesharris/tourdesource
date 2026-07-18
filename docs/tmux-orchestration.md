@@ -139,6 +139,23 @@ A reader — a model, or a shell script parsing the line — will happily take t
 trailing `.` as part of the filename, and the answer lands somewhere nobody is
 watching. Our own mock assistant fell for this first, which is how we found it.
 
+## Failing loudly
+
+Narration that produces *nothing* is a failed run, not a quiet fallback to a
+placeholder draft. An early version warned and exited 0, and the summary — which
+only mentioned narration on success — was indistinguishable from a plain
+`tds draft`. A timed-out run then overwrote a good narrated tour with 18 TODOs
+and reported success.
+
+So: report the narrated count whenever narration was requested, and exit
+non-zero when it was requested and nothing came back. The draft is still
+written, because a TODO skeleton is still useful — but the caller is told.
+
+Keep the assistant's raw response. Stop ids derive from anchors and are stable
+across runs, so a saved response can be replayed (`--narrate-from`) to rebuild
+the same document for free — which is how the clobbered tour above was
+recovered.
+
 ## Testing it
 
 `internal/orchestration/orchestration_test.go` runs a shell-script stand-in for

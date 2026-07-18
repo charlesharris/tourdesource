@@ -42,6 +42,9 @@ type Result struct {
 	Landmarks int
 	Hotspots  int
 	Narrated  int // stops whose prose came from the assistant
+	// NarrateRequested records that --narrate was asked for, so the caller can
+	// distinguish "narrated nothing" from "never tried".
+	NarrateRequested bool
 }
 
 // Generate assembles context from the map, plans a tour, optionally narrates it,
@@ -109,6 +112,7 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 		}
 	}
 
+	res.NarrateRequested = opts.Narrate != nil
 	if opts.Narrate != nil {
 		n, err := narrate(ctx, plan, dctx, *opts.Narrate, logf, warnf)
 		if err != nil {
