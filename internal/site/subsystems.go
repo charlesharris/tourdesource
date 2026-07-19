@@ -27,9 +27,63 @@ const (
 	ColFeature = "Feature areas"
 	ColDomain  = "Shared domain"
 	ColInfra   = "Infrastructure"
+	// ColModules is used only by the generic derivation, where no convention
+	// told us what role a directory plays. Sorting such groups into the role
+	// columns would assert a layering nobody derived.
+	ColModules = "Modules"
 )
 
-func allColumns() []string { return []string{ColEntry, ColFeature, ColDomain, ColInfra} }
+func allColumns() []string {
+	return []string{ColEntry, ColModules, ColFeature, ColDomain, ColInfra}
+}
+
+// Derivation names how the subsystems were arrived at, so the page can describe
+// itself accurately instead of always claiming an architecture was understood.
+const (
+	DerivationConvention = "convention" // a known layout matched (today: Rails)
+	DerivationDirectory  = "directory"  // fallback: grouped by directory shape
+)
+
+// containerDirs hold modules rather than being one themselves: grouping all of
+// `internal/` as a single node would produce one blob where a Go developer sees
+// fifteen packages.
+var containerDirs = map[string]bool{
+	"internal": true, "pkg": true, "src": true, "lib": true, "libs": true,
+	"packages": true, "apps": true, "modules": true, "services": true,
+	"components": true, "crates": true, "providers": true, "cmd": true,
+}
+
+// genericGroup names the subsystem a path belongs to when no convention applies:
+// its directory, descending one level into container directories.
+//
+// This is the honest floor — structure is all we have, so structure is all it
+// claims. Every future lens degrades to this when its markers are absent.
+func genericGroup(path string) (name string, ok bool) {
+	if notArchitecture(path) {
+		return "", false
+	}
+	parts := strings.Split(path, "/")
+	switch {
+	case len(parts) == 1:
+		// A file at the repo root — main.go, setup.py.
+		return "(root)", true
+	case containerDirs[parts[0]] && len(parts) > 2:
+		return parts[0] + "/" + parts[1], true
+	default:
+		return parts[0], true
+	}
+}
+
+// genericColumn places a generic group. Only entry points are claimed, because
+// `cmd/` and a root main file are near-universal and unambiguous; everything
+// else stays in the unlabelled Modules column.
+func genericColumn(name string) string {
+	if name == "(root)" || name == "cmd" || strings.HasPrefix(name, "cmd/") ||
+		name == "bin" || strings.HasPrefix(name, "bin/") {
+		return ColEntry
+	}
+	return ColModules
+}
 
 // columnsFor returns the columns that actually hold a subsystem, in fixed
 // left-to-right order.
@@ -92,16 +146,24 @@ var dirRoles = []struct {
 	{"extra", ColInfra, "Extras"},
 }
 
-// roleFor returns the column and display name for a path, or ok=false when the
-// path belongs to nothing worth showing (tests, docs, vendored code).
-func roleFor(path string) (column, name string, ok bool) {
-	// Tests and docs are excluded from the architecture map: they describe the
-	// system rather than compose it, and including them buries the real
-	// subsystems under the largest directories in the repo.
-	for _, skip := range []string{"test/", "spec/", "doc/", "docs/", "vendor/", "node_modules/"} {
+// notArchitecture reports whether a path describes the system rather than
+// composing it. Excluded from every derivation, conventional or generic:
+// including tests buries the real subsystems under the largest directories in
+// the repo.
+func notArchitecture(path string) bool {
+	for _, skip := range []string{"test/", "tests/", "spec/", "doc/", "docs/", "vendor/", "node_modules/", "third_party/"} {
 		if strings.HasPrefix(path, skip) {
-			return "", "", false
+			return true
 		}
+	}
+	return false
+}
+
+// roleFor returns the column and display name for a path, or ok=false when no
+// convention matches it.
+func roleFor(path string) (column, name string, ok bool) {
+	if notArchitecture(path) {
+		return "", "", false
 	}
 	best := -1
 	for i, r := range dirRoles {
@@ -117,14 +179,16 @@ func roleFor(path string) (column, name string, ok bool) {
 	return dirRoles[best].column, dirRoles[best].name, true
 }
 
-// DeriveSubsystems groups the mapped files into architecture nodes.
+// DeriveSubsystems groups the mapped files into architecture nodes. The third
+// return value names how the grouping was arrived at (DerivationConvention or
+// DerivationDirectory) so the page can describe itself accurately.
 func DeriveSubsystems(
 	files []store.File,
 	symbols []protocol.Symbol,
 	imports []protocol.Import,
 	signals []store.GitSignal,
 	entrypoints []protocol.Entrypoint,
-) ([]Subsystem, map[string]string) {
+) ([]Subsystem, map[string]string, string) {
 	churn := map[string]store.GitSignal{}
 	for _, s := range signals {
 		churn[s.Path] = s
@@ -139,23 +203,47 @@ func DeriveSubsystems(
 	groups := map[string]*group{}
 	subsystemOf := map[string]string{} // repo path -> subsystem name
 
+	// Only code composes a subsystem; a YAML locale file is not architecture.
+	var code []store.File
 	for _, f := range files {
-		// Only code composes a subsystem; a YAML locale file is not architecture.
 		if f.Language == "" || f.Language == "markdown" || f.Language == "json" {
 			continue
 		}
-		column, name, ok := roleFor(f.Path)
-		if !ok {
-			continue
-		}
-		g := groups[name]
+		code = append(code, f)
+	}
+
+	add := func(name, column, path string, g *group) {
 		if g == nil {
 			g = &group{name: name, column: column}
 			groups[name] = g
 		}
-		g.paths = append(g.paths, f.Path)
-		g.commits += churn[f.Path].Churn
-		subsystemOf[f.Path] = name
+		g.paths = append(g.paths, path)
+		g.commits += churn[path].Churn
+		subsystemOf[path] = name
+	}
+
+	for _, f := range code {
+		column, name, ok := roleFor(f.Path)
+		if !ok {
+			continue
+		}
+		add(name, column, f.Path, groups[name])
+	}
+
+	// Fall back for the whole repo rather than per file: mixing a couple of
+	// convention hits with directory guesses for everything else would read as
+	// one derivation when it is two. Either a layout was recognised or it was
+	// not (TDS-67; the lens work generalises this).
+	derivation := DerivationConvention
+	if len(groups) == 0 {
+		derivation = DerivationDirectory
+		for _, f := range code {
+			name, ok := genericGroup(f.Path)
+			if !ok {
+				continue
+			}
+			add(name, genericColumn(name), f.Path, groups[name])
+		}
 	}
 
 	// Dependencies: lift the map's file-level import edges to the group level.
@@ -247,7 +335,7 @@ func DeriveSubsystems(
 		}
 		return out[i].Name < out[j].Name
 	})
-	return out, subsystemOf
+	return out, subsystemOf, derivation
 }
 
 // describeSubsystem is the placeholder description used until the narrate pass

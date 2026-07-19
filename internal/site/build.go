@@ -211,11 +211,11 @@ func writeTheme(dir string) error {
 
 // writeData emits data/*.json and one content page per source file.
 func writeData(in Input, dir string, opts Options) (*Result, error) {
-	subs, subsystemOf := DeriveSubsystems(in.Files, in.Symbols, in.Imports, in.Signals, in.Entrypoints)
+	subs, subsystemOf, derivation := DeriveSubsystems(in.Files, in.Symbols, in.Imports, in.Signals, in.Entrypoints)
 	refs := ReferenceCounts(in.Symbols, in.Imports)
 	importedBy := InvertImports(in.Imports)
 
-	manifestJSON := buildManifest(in, subs, columnsFor(subs))
+	manifestJSON := buildManifest(in, subs, columnsFor(subs), derivation)
 	tour := buildTour(in.Manifest)
 	symbols := buildSymbols(in, subsystemOf, refs, opts.MaxSymbols)
 

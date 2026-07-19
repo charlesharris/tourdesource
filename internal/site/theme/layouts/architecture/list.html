@@ -2,7 +2,11 @@
 {{ $m := site.Data.manifest }}
 <div class="page page-arch">
   <h2>Architecture map</h2>
+  {{ if eq $m.derivation "directory" }}
+  <p class="lede">{{ len $m.subsystems }} modules, grouped by directory. No known project layout matched this repository, so these are its structure rather than its architecture — nothing here claims to know what role a module plays. Expand any node to see its dependencies and key files.</p>
+  {{ else }}
   <p class="lede">{{ len $m.subsystems }} subsystems arranged by role — from HTTP entry points on the left to shared infrastructure on the right. Expand any node to see its dependencies and key files.</p>
+  {{ end }}
   <div class="arch-cols">
     {{ range $m.columns }}
     {{ $col := . }}

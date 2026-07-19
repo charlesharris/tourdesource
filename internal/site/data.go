@@ -36,6 +36,9 @@ type SiteManifest struct {
 	Dirs       []DirCount  `json:"dirs"`
 	Columns    []string    `json:"columns"`
 	Subsystems []Subsystem `json:"subsystems"`
+	// Derivation is how the subsystems were arrived at, so the architecture page
+	// can describe itself rather than always claiming a role layering.
+	Derivation string `json:"derivation"`
 }
 
 type RepoInfo struct {
@@ -177,7 +180,7 @@ type Input struct {
 }
 
 // buildManifest assembles data/manifest.json.
-func buildManifest(in Input, subs []Subsystem, columns []string) SiteManifest {
+func buildManifest(in Input, subs []Subsystem, columns []string, derivation string) SiteManifest {
 	langs := map[string]int{}
 	for _, f := range in.Files {
 		if f.Language != "" {
@@ -212,6 +215,7 @@ func buildManifest(in Input, subs []Subsystem, columns []string) SiteManifest {
 		},
 		Dirs:       topDirs(in.Files, 8),
 		Columns:    columns,
+		Derivation: derivation,
 		Subsystems: subs,
 	}
 }

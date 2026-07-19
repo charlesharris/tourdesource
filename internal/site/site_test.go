@@ -67,9 +67,6 @@ func TestFrontmatterNestsCustomParams(t *testing.T) {
 	}
 }
 
-// TestTourLiftsDetourStops — the theme renders a flat stop list, so a detour
-// stop must be carried into its chapter rather than dropped. Losing one would
-// silently shrink the reader's path.
 // TestTourKeepsDetoursNested covers TDS-63: a side-quest is deliberately off the
 // main path, so it must stay attached to its parent stop rather than being
 // lifted into the chapter's linear sequence.
@@ -221,7 +218,7 @@ func TestSubsystemsGroupByRole(t *testing.T) {
 	}
 	eps := []protocol.Entrypoint{{Path: "app/controllers/issues_controller.rb", Kind: "rails-controller"}}
 
-	subs, of := DeriveSubsystems(files, nil, imports, signals, eps)
+	subs, of, _ := DeriveSubsystems(files, nil, imports, signals, eps)
 
 	byName := map[string]Subsystem{}
 	for _, s := range subs {
@@ -296,6 +293,72 @@ func TestColumnsDropEmptyOnes(t *testing.T) {
 	}
 	if len(columnsFor(nil)) != 0 {
 		t.Error("no subsystems should yield no columns")
+	}
+}
+
+// TestGenericDerivationGroupsByDirectory covers TDS-67: a repo whose layout
+// matches no convention produced zero subsystems and a blank Architecture tab.
+func TestGenericDerivationGroupsByDirectory(t *testing.T) {
+	// tourdesource's own shape: Go at the root, a Ruby gem under providers/.
+	files := []store.File{
+		{Path: "main.go", Language: "go"},
+		{Path: "internal/site/data.go", Language: "go"},
+		{Path: "internal/site/build.go", Language: "go"},
+		{Path: "internal/cli/build.go", Language: "go"},
+		{Path: "providers/ruby/lib/tds/structure.rb", Language: "ruby"},
+		{Path: "test/unit/thing_test.go", Language: "go"}, // not architecture
+	}
+	subs, of, derivation := DeriveSubsystems(files, nil, nil, nil, nil)
+
+	if derivation != DerivationDirectory {
+		t.Fatalf("derivation = %q, want %q for an unrecognised layout", derivation, DerivationDirectory)
+	}
+	if len(subs) == 0 {
+		t.Fatal("an unrecognised layout must still yield subsystems, not a blank page")
+	}
+	byName := map[string]Subsystem{}
+	for _, s := range subs {
+		byName[s.Name] = s
+	}
+	// internal/ is a container: its packages are separate nodes, not one blob.
+	if _, ok := byName["internal/site"]; !ok {
+		t.Errorf("want a node per package under internal/, got %v", byName)
+	}
+	if _, ok := byName["internal"]; ok {
+		t.Error("internal/ must not collapse into a single node")
+	}
+	if n := byName["internal/site"].Files; n != 2 {
+		t.Errorf("internal/site files = %d, want 2", n)
+	}
+	if c := byName["(root)"].Column; c != ColEntry {
+		t.Errorf("a root main file should be an entry point, got column %q", c)
+	}
+	// Nothing derived a role for a Go package, so nothing claims one.
+	if c := byName["internal/site"].Column; c != ColModules {
+		t.Errorf("column = %q, want the unlabelled %q — no role was derived", c, ColModules)
+	}
+	if _, ok := of["test/unit/thing_test.go"]; ok {
+		t.Error("tests describe the system rather than compose it")
+	}
+}
+
+// TestConventionWinsOverGeneric covers TDS-67: a recognised layout must not pick
+// up directory-shaped guesses alongside its real roles.
+func TestConventionWinsOverGeneric(t *testing.T) {
+	files := []store.File{
+		{Path: "app/controllers/issues_controller.rb", Language: "ruby"},
+		{Path: "app/models/issue.rb", Language: "ruby"},
+		{Path: "script/oddball.rb", Language: "ruby"}, // matches no convention
+	}
+	subs, _, derivation := DeriveSubsystems(files, nil, nil, nil, nil)
+
+	if derivation != DerivationConvention {
+		t.Fatalf("derivation = %q, want %q", derivation, DerivationConvention)
+	}
+	for _, s := range subs {
+		if s.Name == "script" {
+			t.Error("an unmatched directory must not become a subsystem when a layout was recognised")
+		}
 	}
 }
 
