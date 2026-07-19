@@ -31,6 +31,10 @@ disableKinds = ["taxonomy", "term", "RSS", "sitemap"]
     noClasses = false
     lineNos = false          # per-call: file pages pass lineNos=true explicitly
     lineNumbersInTable = true
+    # Make each line an anchor target. Findings link to #L<n>, and without
+    # these the links resolve to nothing at all (TDS-31 shipped them dead).
+    anchorLineNos = true
+    lineAnchors = "L"
     tabWidth = 2
   [markup.goldmark.renderer]
     unsafe = true            # commentary bodies may contain inline HTML

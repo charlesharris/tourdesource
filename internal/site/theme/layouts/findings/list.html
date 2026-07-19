@@ -54,7 +54,7 @@
       <tbody>
         {{ range .findings }}
         <tr>
-          <td class="mono"><a class="link" href="{{ partial "fileurl" .path }}#L{{ .start_line }}">{{ .path }}</a></td>
+          <td class="mono"><a class="link" href="{{ partial "fileurl" .path }}#L-{{ .start_line }}">{{ .path }}</a></td>
           <td class="num mono">{{ .start_line }}</td>
           <td><span class="sev sev-{{ .severity | lower }}">{{ .severity }}</span></td>
           <td class="mono">{{ .rule }}</td>

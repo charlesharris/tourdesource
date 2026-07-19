@@ -33,7 +33,7 @@
     <ul class="finding-list">
       {{ range . }}
       <li class="finding finding-{{ .severity | lower }}">
-        <a class="finding-line mono" href="#L{{ .line }}">{{ .line }}</a>
+        <a class="finding-line mono" href="#L-{{ .line }}">{{ .line }}</a>
         <div class="finding-body">
           <div class="finding-rule mono">{{ .tool }} · {{ .rule }}</div>
           <div class="finding-msg">{{ .message }}</div>
