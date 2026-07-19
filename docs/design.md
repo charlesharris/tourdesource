@@ -26,7 +26,7 @@ Target use cases, in eventual priority order: **onboarding, code review, demos, 
 - Anchors that survive normal code churn (**symbol-first**, line-range fallback).
 - A viewer that supports **guided narration + free browsing** of the whole repo.
 - A **pluggable analysis pipeline**: per-language **providers** (native programs behind a JSON protocol) run existing tools (linters, security scanners, type checkers, coverage/complexity) and surface each tool's output as a toggleable **view** layered over the tour.
-- Ship the core as a **single static binary** (Go) that dispatches to language providers — zero-runtime install for the core; deep analysis stays native to each language.
+- Ship the core as a **single Go binary** that dispatches to language providers — deep analysis stays native to each language. `tds build` additionally requires **Hugo extended ≥ 0.128** on PATH: the site is rendered from Hugo templates, so Hugo is a build dependency of the core, not an optional extra.
 - A clean, inspectable **pipeline** where the analysis and build stages have no AI or network dependency (only drafting talks to Claude).
 - Use the author's **Claude subscription** for drafting (no API key management).
 
@@ -48,7 +48,7 @@ Target use cases, in eventual priority order: **onboarding, code review, demos, 
 - **Side-quest / detour** — an optional, collapsible branch hanging off a stop (e.g. a role-specific deep dive). Keeps the spine linear while allowing depth.
 - **Anchor** — a durable reference to a location in code. **Symbol-first** (`path/to/file.rb::Class#method`), resolved at build time by a language provider (native parser; tree-sitter fallback), with a **line-range fallback** (`path/to/file.rb:40-52`) where no provider resolves it.
 - **Repo map** — the deterministic structural index `tds` builds: symbols, imports/dependencies, file tree, and git signals. Grounds both anchor resolution and AI drafting.
-- **Core** — the single Go binary: dispatch, language detection, store, draft/tmux orchestration, build, bundle, viewer, tour format, anchor resolution. Language-agnostic; never parses code itself.
+- **Core** — the single Go binary: dispatch, language detection, store, draft/tmux orchestration, site generation (data contract + embedded Hugo theme), tour format, anchor resolution. Language-agnostic; never parses code itself.
 - **Provider** — an out-of-process program that, given `{repo, commit, files, config}`, returns **structure** (symbols/imports/entrypoints) and/or **findings** per a versioned JSON protocol. Native providers are best-in-class per language (a Ruby gem using prism + rubocop/brakeman; a Node package using the TS compiler + eslint/tsc). A built-in **tree-sitter fallback provider** (compiled into the core) covers everything else.
 - **Analyzer** — a single external tool (rubocop, brakeman, eslint, tsc, coverage, complexity…) that a provider runs to produce findings. Each analyzer maps to one or more **views**.
 - **Finding** — a normalized result from an analyzer: an anchor (file + line range, resolved to a symbol where possible), severity, rule/code, message, and optional URL.
@@ -232,7 +232,7 @@ Steps:
 5. Embed **selected views** — findings from the store for the enabled analyzers, plus each view's render metadata (annotation/heatmap/panel/badge). Which views ship is configurable; default is all views with findings.
 6. Emit the bundle.
 
-**Output form:** **directory bundle** by default (`index.html` + assets + repo blobs), with an optional **single-file self-contained HTML** for the "just email it" case (practical for small repos, offered but not default).
+**Output form:** a **multi-page static site** (`public/`) rendered by Hugo from the embedded theme — overview, architecture map, explorer, a page per source file, the tour, and a symbol index. `relativeURLs = true`, so it works served from any subpath or opened from `file://`. There is no single-file variant (decision 19a).
 
 ### 6.5 `tds check` — drift report
 
@@ -370,7 +370,9 @@ A **view** is `{ id, title, kind, provenance, findings }` where `kind ∈ {annot
 | 16 | Wrap existing tools, not bespoke analysis | Reuse rubocop/eslint/tsc/etc.; provider protocol for more | Build our own analyzers (huge, worse) |
 | 17 | Full view system in v1 (annotations/heatmap/panel/badge) | Instrumented views are a core differentiator | Ship subset (weaker first release) |
 | 18 | Analyzers availability-gated + failure-isolated | A missing/broken tool degrades, never blocks | Hard-require tools (fragile across repos) |
-| 19 | Go core, single static binary | Zero-runtime install; embeds viewer; cross-compiles | Python/Node core (adds a runtime to target repos) |
+| 19 | Go core, single binary + Hugo | One artifact to install; cross-compiles; Hugo is the only external tool | Python/Node core (adds a runtime to target repos) |
+| 19a | Multi-page Hugo site is the **only** output; no single-file bundle (TDS-62) | The site is what gets shared for real repos; the bundle was a second UI sharing no design or code with it, and maintaining both meant paying the design cost twice | Keep the emailable single-file bundle (two divergent UIs over one dataset) |
+| 19b | Hugo extended ≥ 0.128 is a hard build dependency | Theme stays authored as Hugo templates, so the design iterates with `hugo server` | Port templates to Go `html/template` (re-implements the design system, loses live iteration) |
 | 20 | Out-of-process native providers | Best-in-class native analysis (prism, TS compiler); crash isolation | Tree-sitter-only in core (shallower); fork per language (unmaintainable) |
 | 21 | Versioned JSON provider protocol | Language-neutral core; third-party providers; independent release cadence | In-core language plugins (couples core to every language) |
 

@@ -3,14 +3,14 @@ module github.com/charlesharris/tourdesource
 go 1.25.0
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/spf13/cobra v1.10.2
+	github.com/yuin/goldmark v1.8.4
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.54.0
 )
 
 require (
-	github.com/BurntSushi/toml v1.6.0 // indirect
-	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
-	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
@@ -18,9 +18,7 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
-	github.com/yuin/goldmark v1.8.4 // indirect
 	golang.org/x/sys v0.46.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.74.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect

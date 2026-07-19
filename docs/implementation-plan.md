@@ -157,9 +157,9 @@ i.e. scaffold → protocol → Ruby structure → anchors → manifest → viewe
 - `tds map`, `tds analyze`, `tds draft`, `tds build`, `tds check` all work on a real **Rails + React** repo.
 - Both native providers (Ruby, JS/React) ship and are discovered; **tree-sitter fallback** covers other languages.
 - Full **view system** (annotations/heatmap/panel/badge) renders in the viewer.
-- A tour is a **SHA-pinned, self-contained bundle** (directory + optional single-file) with guided narration and free-browse.
+- A tour is a **SHA-pinned, self-contained static site** with guided narration and free-browse.
 - Drafting runs on the author's **Claude subscription** via tmux, and the emitted draft has **only validated anchors**.
-- Core ships as a **single static binary**.
+- Core ships as a **single Go binary** plus a **Hugo extended ≥ 0.128** dependency for `tds build`.
 
 ---
 

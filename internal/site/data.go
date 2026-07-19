@@ -5,11 +5,10 @@
 // produce a browsable site: an overview, an architecture map, a file explorer,
 // per-file pages, the tour itself, a symbol index, and a search palette.
 //
-// Hugo is a real dependency of this output format, deliberately: the theme is
-// authored as Hugo templates and keeping it that way means the design can be
-// iterated with `hugo server` rather than re-implemented. tds still produces the
-// single-file bundle (internal/builder) with no external tools, so the emailable
-// artifact is unaffected. See docs/design.md §8 and TDS-58.
+// Hugo is a build dependency of tds, deliberately: the theme is authored as Hugo
+// templates and keeping it that way means the design can be iterated with
+// `hugo server` rather than re-implemented. This is the only output format —
+// the single-file bundle was removed in TDS-62. See docs/design.md §8.
 package site
 
 import (
