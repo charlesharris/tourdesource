@@ -2,7 +2,7 @@
 {{ $m := site.Data.manifest }}
 <div class="page page-arch">
   <h2>Architecture map</h2>
-  <p class="lede">Eight subsystems arranged by role — from HTTP entry points on the left to shared infrastructure on the right. Expand any node to see its dependencies and key files.</p>
+  <p class="lede">{{ len $m.subsystems }} subsystems arranged by role — from HTTP entry points on the left to shared infrastructure on the right. Expand any node to see its dependencies and key files.</p>
   <div class="arch-cols">
     {{ range $m.columns }}
     {{ $col := . }}

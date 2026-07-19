@@ -215,7 +215,7 @@ func writeData(in Input, dir string, opts Options) (*Result, error) {
 	refs := ReferenceCounts(in.Symbols, in.Imports)
 	importedBy := InvertImports(in.Imports)
 
-	manifestJSON := buildManifest(in, subs, columns())
+	manifestJSON := buildManifest(in, subs, columnsFor(subs))
 	tour := buildTour(in.Manifest)
 	symbols := buildSymbols(in, subsystemOf, refs, opts.MaxSymbols)
 

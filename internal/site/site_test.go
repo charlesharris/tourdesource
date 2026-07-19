@@ -266,8 +266,49 @@ func TestSubsystemDescriptionsClaimNothing(t *testing.T) {
 	if !strings.Contains(desc, "57 files") || !strings.Contains(desc, "3,861 commits") {
 		t.Errorf("description should state what was measured, got %q", desc)
 	}
-	if !strings.Contains(desc, "not yet written") {
+	if !strings.Contains(desc, "not yet described") {
 		t.Errorf("description should admit it is a placeholder, got %q", desc)
+	}
+	// TDS-70: it used to send the reader to `tds draft --narrate`, which only
+	// writes tour-stop prose and leaves subsystems exactly as they were.
+	if strings.Contains(desc, "--narrate") {
+		t.Errorf("description must not name a command that would not change it, got %q", desc)
+	}
+}
+
+// TestColumnsDropEmptyOnes covers TDS-70: a classic Rails app has no
+// app/services, so claiming an empty "Feature areas" layer misdescribes it.
+func TestColumnsDropEmptyOnes(t *testing.T) {
+	subs := []Subsystem{
+		{Name: "Controllers", Column: ColEntry},
+		{Name: "Domain models", Column: ColDomain},
+		{Name: "Database", Column: ColInfra},
+	}
+	got := columnsFor(subs)
+	want := []string{ColEntry, ColDomain, ColInfra}
+	if len(got) != len(want) {
+		t.Fatalf("columns = %v, want %v (the empty Feature areas column dropped)", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("columns = %v, want %v in fixed left-to-right order", got, want)
+		}
+	}
+	if len(columnsFor(nil)) != 0 {
+		t.Error("no subsystems should yield no columns")
+	}
+}
+
+// TestLibIsSharedDomain covers TDS-70: lib/ is a project's own shared code, and
+// filing it under Infrastructure buried Redmine's second largest body of
+// domain logic.
+func TestLibIsSharedDomain(t *testing.T) {
+	col, name, ok := roleFor("lib/redmine/access_control.rb")
+	if !ok || name != "Library" {
+		t.Fatalf("roleFor(lib/...) = %q, %q, %v", col, name, ok)
+	}
+	if col != ColDomain {
+		t.Errorf("lib/ column = %q, want %q", col, ColDomain)
 	}
 }
 

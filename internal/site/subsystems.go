@@ -29,7 +29,29 @@ const (
 	ColInfra   = "Infrastructure"
 )
 
-func columns() []string { return []string{ColEntry, ColFeature, ColDomain, ColInfra} }
+func allColumns() []string { return []string{ColEntry, ColFeature, ColDomain, ColInfra} }
+
+// columnsFor returns the columns that actually hold a subsystem, in fixed
+// left-to-right order.
+//
+// Not every layout populates every column: a classic Rails app like Redmine has
+// no app/services or app/queries, so "Feature areas" is structurally empty
+// there. Rendering the header anyway draws a labelled hole in the architecture
+// and implies the layer exists but was missed, which is a claim about the
+// codebase that is not true.
+func columnsFor(subs []Subsystem) []string {
+	used := map[string]bool{}
+	for _, s := range subs {
+		used[s.Column] = true
+	}
+	var out []string
+	for _, c := range allColumns() {
+		if used[c] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
 
 // dirRole maps a directory prefix to the column its files belong in, and a
 // readable name. Longest prefix wins, so `app/models/concerns` can be placed
@@ -43,15 +65,27 @@ var dirRoles = []struct {
 	{"app/api", ColEntry, "API"},
 	{"config/routes", ColEntry, "Routing"},
 	{"app/models", ColDomain, "Domain models"},
+	{"app/validators", ColDomain, "Validators"},
 	{"app/services", ColFeature, "Services"},
 	{"app/queries", ColFeature, "Queries"},
+	{"app/operations", ColFeature, "Operations"},
+	{"app/interactors", ColFeature, "Interactors"},
+	{"app/policies", ColFeature, "Policies"},
+	{"app/forms", ColFeature, "Forms"},
+	{"app/presenters", ColFeature, "Presenters"},
+	{"app/serializers", ColFeature, "Serializers"},
+	{"app/decorators", ColFeature, "Decorators"},
 	{"app/jobs", ColInfra, "Background jobs"},
 	{"app/mailers", ColInfra, "Mailers"},
 	{"app/helpers", ColInfra, "View helpers"},
 	{"app/views", ColInfra, "Views"},
 	{"app/assets", ColInfra, "Assets"},
 	{"app/javascript", ColInfra, "Frontend"},
-	{"lib", ColInfra, "Library"},
+	// lib/ is a project's own shared code, not plumbing it stands on: Redmine's
+	// lib/redmine holds access control, activity streams, field formats and the
+	// plugin hook system. Filing it under Infrastructure buried the second
+	// largest body of domain logic in the repo.
+	{"lib", ColDomain, "Library"},
 	{"config", ColInfra, "Configuration"},
 	{"db", ColInfra, "Database"},
 	{"public", ColInfra, "Static assets"},
@@ -201,7 +235,7 @@ func DeriveSubsystems(
 	// Order by column, then by weight within it, so the map reads left to right
 	// and the most substantial node leads each column.
 	colIndex := map[string]int{}
-	for i, c := range columns() {
+	for i, c := range allColumns() {
 		colIndex[c] = i
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -219,8 +253,10 @@ func DeriveSubsystems(
 // describeSubsystem is the placeholder description used until the narrate pass
 // replaces it. It states only what tds actually measured — inventing a purpose
 // here is exactly the kind of confident-but-wrong text the draft avoids.
+// It must not name a command that would not help: `--narrate` writes tour-stop
+// prose and does not touch subsystems (TDS-59 is the pass that will).
 func describeSubsystem(name string, files, commits int) string {
-	return fmt.Sprintf("%d files, %s commits. Description not yet written — run `tds draft --narrate` to have these named and described.",
+	return fmt.Sprintf("%d files, %s commits. Grouped by directory role; not yet described.",
 		files, humanCount(commits))
 }
 
