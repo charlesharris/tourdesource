@@ -258,6 +258,7 @@ export TDS_PROVIDER_RUBY="$PWD/providers/ruby/exe/tds-provider-ruby"
 
 - [`docs/design.md`](docs/design.md) — architecture and design decisions
 - [`docs/implementation-plan.md`](docs/implementation-plan.md) — milestones and tasks
+- [`docs/lenses.md`](docs/lenses.md) — how tds recognises a kind of project
 - [`docs/protocol.md`](docs/protocol.md) — the provider protocol (v1)
 - [`docs/tmux-orchestration.md`](docs/tmux-orchestration.md) — driving an assistant over tmux
 - [`docs/tours/ruby-provider.tour.md`](docs/tours/ruby-provider.tour.md) — an example tour
