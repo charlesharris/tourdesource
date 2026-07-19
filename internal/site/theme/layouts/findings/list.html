@@ -16,8 +16,8 @@
     <div class="view-head">
       <h3>{{ .title }}</h3>
       <div class="view-counts mono">
-        {{ with .counts.errors }}<span class="sev sev-error">{{ . }} error{{ if ne . 1 }}s{{ end }}</span>{{ end }}
-        {{ with .counts.warnings }}<span class="sev sev-warning">{{ . }} warning{{ if ne . 1 }}s{{ end }}</span>{{ end }}
+        {{ with .counts.errors }}<span class="sev sev-error">{{ . }} error{{ if ne (int .) 1 }}s{{ end }}</span>{{ end }}
+        {{ with .counts.warnings }}<span class="sev sev-warning">{{ . }} warning{{ if ne (int .) 1 }}s{{ end }}</span>{{ end }}
         {{ with .counts.info }}<span class="sev sev-info">{{ . }} info</span>{{ end }}
       </div>
     </div>

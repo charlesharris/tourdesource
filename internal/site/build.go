@@ -219,12 +219,12 @@ func writeData(in Input, dir string, opts Options) (*Result, error) {
 	importedBy := InvertImports(in.Imports)
 
 	manifestJSON := buildManifest(in, subs, columnsFor(subs), derivation)
-	tour := buildTour(in.Manifest)
-	symbols := buildSymbols(in, subsystemOf, refs, opts.MaxSymbols)
 	// Views are derived from the findings already in the store, so what the
 	// site shows is exactly what `tds analyze` recorded at this commit.
 	views := view.Build(in.Findings, in.Commit)
 	findingsByPath := view.ByPath(views)
+	tour := buildTour(in.Manifest, findingsByPath)
+	symbols := buildSymbols(in, subsystemOf, refs, opts.MaxSymbols)
 
 	dataDir := filepath.Join(dir, "data")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {

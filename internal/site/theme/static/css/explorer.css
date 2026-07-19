@@ -314,3 +314,17 @@ html, body { height: 100%; }
 .heat > span { display: block; height: 100%; background: var(--color-accent); }
 .heat-table td { vertical-align: middle; font-size: 13px; }
 .view-more { font-size: 11px; margin-top: var(--space-2); }
+
+/* Findings on a tour stop. Subordinate to the prose by construction: collapsed,
+   smaller, and below it — narration leads, instrumentation annotates. */
+.stop-findings { margin: 0 0 var(--space-4); max-width: 60ch; border: 1px solid var(--color-divider);
+  border-radius: var(--radius-sm); }
+.stop-findings-summary { cursor: pointer; list-style: none; padding: var(--space-2) var(--space-3);
+  display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.stop-findings-summary::-webkit-details-marker { display: none; }
+.stop-findings-summary::after { content: "▸"; margin-left: auto; color: var(--color-neutral-500); }
+.stop-findings[open] > .stop-findings-summary::after { content: "▾"; }
+.stop-findings-summary:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+.stop-findings-label { font-size: 11px; color: var(--color-neutral-600); }
+.stop-findings .finding-list { padding: 0 var(--space-3) var(--space-2); border-top: 1px solid var(--color-divider); }
+.stop-findings .view-more { padding: 0 var(--space-3) var(--space-2); margin: 0; }

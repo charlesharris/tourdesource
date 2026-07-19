@@ -33,6 +33,37 @@
     {{ end }}
 
     <div class="prose-lg tour-prose">{{ $stop.prose | safeHTML }}</div>
+
+    {{/* What the analyzers flagged inside the lines this stop shows. Joined by
+         range in Go, so no directive is needed in the tour (design §7).
+         Collapsed by default: a stop is narration, and instrumentation is a
+         footnote to it, not a competing column of text. */}}
+    {{ with $stop.findings }}
+    <details class="stop-findings">
+      <summary class="stop-findings-summary mono">
+        {{ with $stop.counts.errors }}<span class="sev sev-error">{{ . }} error{{ if ne (int .) 1 }}s{{ end }}</span>{{ end }}
+        {{ with $stop.counts.warnings }}<span class="sev sev-warning">{{ . }} warning{{ if ne (int .) 1 }}s{{ end }}</span>{{ end }}
+        {{ with $stop.counts.info }}<span class="sev sev-info">{{ . }} info</span>{{ end }}
+        <span class="stop-findings-label">flagged here</span>
+      </summary>
+      <ul class="finding-list">
+        {{ range . }}
+        <li class="finding finding-{{ .severity | lower }}">
+          <a class="finding-line mono" href="{{ partial "fileurl" $stop.file }}#L-{{ .line }}">{{ .line }}</a>
+          <div class="finding-body">
+            <div class="finding-rule mono">{{ .tool }} · {{ .rule }}</div>
+            <div class="finding-msg">{{ .message }}</div>
+          </div>
+        </li>
+        {{ end }}
+      </ul>
+      {{ if gt $stop.counts.total (len .) }}
+      <p class="text-muted mono view-more">Showing {{ len . }} of {{ $stop.counts.total }} —
+        <a class="link" href="{{ partial "fileurl" $stop.file }}">all on the file page</a>.</p>
+      {{ end }}
+      <p class="text-muted mono view-more">Tool output, not a verdict on this code.</p>
+    </details>
+    {{ end }}
   </div>
 
   <div class="tour-stop-code code-scroll">

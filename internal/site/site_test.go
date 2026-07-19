@@ -72,7 +72,7 @@ func TestFrontmatterNestsCustomParams(t *testing.T) {
 // lifted into the chapter's linear sequence.
 func TestTourKeepsDetoursNested(t *testing.T) {
 	m := tourWithDetour()
-	got := buildTour(m)
+	got := buildTour(m, nil)
 
 	if len(got.Chapters) != 1 {
 		t.Fatalf("want 1 chapter, got %d", len(got.Chapters))
@@ -99,7 +99,7 @@ func TestTourKeepsDetoursNested(t *testing.T) {
 // HTML, and flattening it to text threw away every list, link and code span.
 func TestTourKeepsProseAsHTML(t *testing.T) {
 	m := tourWithDetour()
-	got := buildTour(m)
+	got := buildTour(m, nil)
 
 	if p := got.Chapters[0].Stops[0].Prose; p != "<p>one</p>" {
 		t.Errorf("prose = %q, want the rendered HTML preserved", p)
@@ -119,7 +119,7 @@ func TestTourCarriesAnchorProvenance(t *testing.T) {
 			{ID: "bad", Anchor: manifest.Anchor{Path: "c.rb", Raw: "c.rb#Nope", Kind: "unresolved", Reason: "symbol not found"}},
 		},
 	}}}
-	stops := buildTour(m).Chapters[0].Stops
+	stops := buildTour(m, nil).Chapters[0].Stops
 
 	if a := stops[0].Anchor; !a.Resolved || a.Loose {
 		t.Errorf("clean anchor = %+v, want resolved and not loose", a)
@@ -140,7 +140,7 @@ func TestTourCarriesFrontMatter(t *testing.T) {
 		Warnings: []string{"c.rb#Nope: symbol not found"},
 		Chapters: []manifest.Chapter{{Title: "Ch", Intro: "<p>chapter why</p>"}},
 	}
-	got := buildTour(m)
+	got := buildTour(m, nil)
 
 	if got.Title != "T" || got.Intro != "<p>why</p>" || got.Audience != "new backend engineers" {
 		t.Errorf("front matter lost: %+v", got)
@@ -157,7 +157,7 @@ func TestTourCarriesFrontMatter(t *testing.T) {
 // "visited by the tour" back-links must see detour stops too.
 func TestWalkSiteStopsCountsDetours(t *testing.T) {
 	var ids []string
-	walkSiteStops(buildTour(tourWithDetour()), func(s TourStop) { ids = append(ids, s.ID) })
+	walkSiteStops(buildTour(tourWithDetour(), nil), func(s TourStop) { ids = append(ids, s.ID) })
 	if len(ids) != 2 || ids[0] != "s1" || ids[1] != "s2" {
 		t.Errorf("walk visited %v, want [s1 s2] in reading order", ids)
 	}
@@ -188,7 +188,7 @@ func TestUnresolvedAnchorHasNoHighlight(t *testing.T) {
 	m := &manifest.Manifest{Chapters: []manifest.Chapter{{
 		Stops: []manifest.Stop{{ID: "s", Anchor: manifest.Anchor{Path: "a.rb", Resolved: false}}},
 	}}}
-	if hl := buildTour(m).Chapters[0].Stops[0].HL; hl != "" {
+	if hl := buildTour(m, nil).Chapters[0].Stops[0].HL; hl != "" {
 		t.Errorf("hl = %q, want empty for an unresolved anchor", hl)
 	}
 }
@@ -534,5 +534,96 @@ func TestCompareVersions(t *testing.T) {
 		if got := compareVersions(c.a, c.b); got != c.want {
 			t.Errorf("compareVersions(%q,%q) = %d, want %d", c.a, c.b, got, c.want)
 		}
+	}
+}
+
+// stopAt builds a one-stop tour anchored to a resolved line range.
+func stopAt(path string, start, end int, symbol string) *manifest.Manifest {
+	return &manifest.Manifest{Chapters: []manifest.Chapter{{
+		Stops: []manifest.Stop{{
+			ID: "s1", Prose: "<p>p</p>",
+			Anchor: manifest.Anchor{
+				Path: path, Symbol: symbol, StartLine: start, EndLine: end, Resolved: true,
+			},
+		}},
+	}}}
+}
+
+// TestStopFindingsJoinByRange covers TDS-35. The design says findings attach via
+// the anchored symbol; that join is nearly empty in practice, because analyzers
+// attribute to the innermost symbol — a stop on the class IssuesController
+// matched none of the 19 findings in its own methods.
+func TestStopFindingsJoinByRange(t *testing.T) {
+	byPath := map[string][]protocol.Finding{"a.rb": {
+		{Path: "a.rb", StartLine: 5, Severity: "info", Tool: "rubocop", Rule: "R1", Symbol: "C#early"},
+		{Path: "a.rb", StartLine: 50, Severity: "error", Tool: "brakeman", Rule: "SQL", Symbol: "C#mid"},
+		{Path: "a.rb", StartLine: 60, Severity: "warning", Tool: "brakeman", Rule: "File", Symbol: "C#mid2"},
+		{Path: "a.rb", StartLine: 900, Severity: "error", Tool: "brakeman", Rule: "Out", Symbol: "C#late"},
+	}}
+	// Anchored at the class, whose own symbol matches none of the findings.
+	stops := buildTour(stopAt("a.rb", 40, 100, "C"), byPath).Chapters[0].Stops
+
+	got := stops[0]
+	if got.Counts.Total != 2 {
+		t.Fatalf("counts = %+v, want the 2 findings inside lines 40-100", got.Counts)
+	}
+	if got.Counts.Errors != 1 || got.Counts.Warnings != 1 {
+		t.Errorf("severity tally = %+v", got.Counts)
+	}
+	// Worst first, so the chip and the list lead with what matters.
+	if got.Findings[0].Rule != "SQL" {
+		t.Errorf("findings should be worst-first, got %+v", got.Findings)
+	}
+	for _, f := range got.Findings {
+		if f.Line < 40 || f.Line > 100 {
+			t.Errorf("finding at line %d is outside the stop's range", f.Line)
+		}
+	}
+}
+
+// TestStopFindingsExcludeMeasurements — a complexity score is not something
+// that flagged the code. A stop covering a whole class picked up one per
+// method, and "30 info flagged here" claims a problem where none was reported.
+func TestStopFindingsExcludeMeasurements(t *testing.T) {
+	byPath := map[string][]protocol.Finding{"a.rb": {
+		{Path: "a.rb", StartLine: 10, Severity: "info", Tool: "flog", View: protocol.ViewHeatmap},
+		{Path: "a.rb", StartLine: 11, Severity: "info", Tool: "flog", View: protocol.ViewHeatmap},
+		{Path: "a.rb", StartLine: 12, Severity: "info", Tool: "rubocop", View: protocol.ViewAnnotations, Rule: "R"},
+	}}
+	got := buildTour(stopAt("a.rb", 1, 100, "C"), byPath).Chapters[0].Stops[0]
+	if got.Counts.Total != 1 || got.Findings[0].Tool != "rubocop" {
+		t.Errorf("counts = %+v findings = %+v, want only the annotation", got.Counts, got.Findings)
+	}
+}
+
+// TestUnresolvedStopHasNoFindings — without a resolved range there is nothing
+// to join against, and guessing would attach findings to the wrong code.
+func TestUnresolvedStopHasNoFindings(t *testing.T) {
+	m := &manifest.Manifest{Chapters: []manifest.Chapter{{
+		Stops: []manifest.Stop{{ID: "s", Anchor: manifest.Anchor{Path: "a.rb", Resolved: false}}},
+	}}}
+	byPath := map[string][]protocol.Finding{"a.rb": {{Path: "a.rb", StartLine: 5, Tool: "rubocop"}}}
+	if got := buildTour(m, byPath).Chapters[0].Stops[0]; got.Counts.Total != 0 {
+		t.Errorf("unresolved anchor should carry no findings, got %+v", got.Counts)
+	}
+}
+
+// TestStopFindingsAreCapped — a stop is a paragraph of narration, not a report.
+func TestStopFindingsAreCapped(t *testing.T) {
+	var fs []protocol.Finding
+	for i := 0; i < maxStopFindings+10; i++ {
+		fs = append(fs, protocol.Finding{
+			Path: "a.rb", StartLine: i + 1, Severity: "warning",
+			Tool: "brakeman", View: protocol.ViewPanel, Rule: "R",
+		})
+	}
+	got := buildTour(stopAt("a.rb", 1, 100, "C"), map[string][]protocol.Finding{"a.rb": fs}).Chapters[0].Stops[0]
+	if len(got.Findings) != maxStopFindings {
+		t.Errorf("listed %d, want the cap of %d", len(got.Findings), maxStopFindings)
+	}
+	// The count is the truth even when the list is trimmed, so the chip does
+	// not under-report.
+	if got.Counts.Total != len(fs) {
+		t.Errorf("counts.Total = %d, want all %d", got.Counts.Total, len(fs))
 	}
 }

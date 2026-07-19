@@ -99,6 +99,28 @@ type TourStop struct {
 	Prose   string       `json:"prose"` // rendered HTML
 	Anchor  StopAnchor   `json:"anchor"`
 	Detours []TourDetour `json:"detours,omitempty"`
+	// Findings are what the analyzers flagged inside the lines this stop shows.
+	// The join needs no directive in the tour (design §7).
+	Findings []StopFinding `json:"findings,omitempty"`
+	// Counts summarise them for the chip shown before the list is opened.
+	Counts FindingCounts `json:"counts,omitempty"`
+}
+
+// StopFinding is one analyzer finding on a tour stop.
+type StopFinding struct {
+	Line     int    `json:"line"`
+	Severity string `json:"severity"`
+	Tool     string `json:"tool"`
+	Rule     string `json:"rule"`
+	Message  string `json:"message"`
+}
+
+// FindingCounts is a severity tally for a stop.
+type FindingCounts struct {
+	Total    int `json:"total"`
+	Errors   int `json:"errors"`
+	Warnings int `json:"warnings"`
+	Info     int `json:"info"`
 }
 
 // TourDetour is a collapsible side-quest hanging off a stop. It nests: a detour
@@ -251,7 +273,7 @@ func buildManifest(in Input, subs []Subsystem, columns []string, derivation stri
 // the reader about the route and destroys the author's on-rails ordering. Prose
 // stays as rendered HTML — goldmark leaves authored raw HTML escaped, so the
 // template can emit it without granting script injection.
-func buildTour(m *manifest.Manifest) SiteTour {
+func buildTour(m *manifest.Manifest, byPath map[string][]protocol.Finding) SiteTour {
 	out := SiteTour{
 		Title:    m.Title,
 		Intro:    m.Intro,
@@ -262,7 +284,7 @@ func buildTour(m *manifest.Manifest) SiteTour {
 		out.Chapters = append(out.Chapters, TourChapter{
 			Title: ch.Title,
 			Intro: ch.Intro,
-			Stops: buildStops(ch.Stops),
+			Stops: buildStops(ch.Stops, byPath),
 		})
 	}
 	return out
@@ -286,7 +308,7 @@ func walkSiteStops(t SiteTour, fn func(TourStop)) {
 }
 
 // buildStops converts a stop list, recursing through detours.
-func buildStops(stops []manifest.Stop) []TourStop {
+func buildStops(stops []manifest.Stop, byPath map[string][]protocol.Finding) []TourStop {
 	var out []TourStop
 	for _, s := range stops {
 		ts := TourStop{
@@ -304,11 +326,12 @@ func buildStops(stops []manifest.Stop) []TourStop {
 				Reason:   s.Anchor.Reason,
 			},
 		}
+		ts.Findings, ts.Counts = stopFindings(inRange(byPath[s.Anchor.Path], s.Anchor))
 		for _, d := range s.Detours {
 			ts.Detours = append(ts.Detours, TourDetour{
 				Title: d.Title,
 				Intro: d.Intro,
-				Stops: buildStops(d.Stops),
+				Stops: buildStops(d.Stops, byPath),
 			})
 		}
 		out = append(out, ts)
@@ -560,4 +583,83 @@ func mustJSON(v any) []byte {
 		panic(fmt.Sprintf("site: encoding data: %v", err)) // shapes are ours; a failure is a bug
 	}
 	return b
+}
+
+// inRange selects the findings that land inside the lines a stop displays.
+//
+// The design says a stop's findings attach "via its anchored symbol", and that
+// join turns out to be nearly empty in practice: analyzers attribute a finding
+// to the innermost symbol containing it, so a stop anchored at the class
+// IssuesController matched none of the 19 findings in its own methods, and
+// Issue matched 1 of 22.
+//
+// Ranges are the honest join anyway. A stop shows a specific span of code, and
+// what a reader wants to know is what is flagged in the code they are looking
+// at — which is the same question whether the anchor named a class or a method.
+func inRange(fs []protocol.Finding, a manifest.Anchor) []protocol.Finding {
+	if !a.Resolved || a.StartLine <= 0 {
+		return nil
+	}
+	end := a.EndLine
+	if end < a.StartLine {
+		end = a.StartLine
+	}
+	var out []protocol.Finding
+	for _, f := range fs {
+		// Measurements are not flags. A stop covering a whole class picks up a
+		// complexity score for every method in it — 30 of them on one Redmine
+		// stop — and "30 info flagged here" says something was found wrong when
+		// nothing was. Heatmap findings live in the heatmap view; the chip on
+		// narration is for things a tool actually objected to.
+		if f.View == protocol.ViewHeatmap {
+			continue
+		}
+		if f.StartLine >= a.StartLine && f.StartLine <= end {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// maxStopFindings caps what one stop lists. A stop is a paragraph of narration,
+// not a report: past a handful the chip should send the reader to the file page
+// rather than swallow the prose.
+const maxStopFindings = 5
+
+// stopFindings reduces a symbol's findings to what a stop shows, worst first.
+func stopFindings(fs []protocol.Finding) ([]StopFinding, FindingCounts) {
+	if len(fs) == 0 {
+		return nil, FindingCounts{}
+	}
+	var counts FindingCounts
+	for _, f := range fs {
+		counts.Total++
+		switch findingRank(f.Severity) {
+		case 0:
+			counts.Errors++
+		case 1:
+			counts.Warnings++
+		default:
+			counts.Info++
+		}
+	}
+	ordered := append([]protocol.Finding(nil), fs...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		ri, rj := findingRank(ordered[i].Severity), findingRank(ordered[j].Severity)
+		if ri != rj {
+			return ri < rj
+		}
+		return ordered[i].StartLine < ordered[j].StartLine
+	})
+	if len(ordered) > maxStopFindings {
+		ordered = ordered[:maxStopFindings]
+	}
+	out := make([]StopFinding, 0, len(ordered))
+	for _, f := range ordered {
+		out = append(out, StopFinding{
+			Line: f.StartLine, Severity: f.Severity,
+			Tool: f.Tool, Rule: f.Rule, Message: f.Message,
+		})
+	}
+	return out, counts
 }
