@@ -47,6 +47,10 @@ type Context struct {
 	Hotspots      []Hotspot
 	Slice         Slice
 	Conventions   []Convention
+	// Analysis is the repo-wide analyzer picture, zero when `tds analyze` has
+	// not been run. Drafting works without it — churn alone still ranks
+	// hotspots — so its absence is a thinner tour, not a failure.
+	Analysis Analysis
 
 	// landmarksUsed records how many of the pool actually became stops, after
 	// dropping those an earlier chapter already covered.
@@ -106,6 +110,82 @@ type Hotspot struct {
 	Churn   int
 	Authors []string // primary authors, as on Landmark
 	AgeDays int
+	// Concern summarises what the analyzers said about this file, empty when
+	// `tds analyze` has not been run or found nothing here.
+	Concern Concern
+}
+
+// Analysis is what the analyzers found across the whole repository, and the
+// files carrying most of it.
+type Analysis struct {
+	Total    int
+	Errors   int
+	Warnings int
+	Info     int
+	Tools    []string // tools that contributed, sorted
+	// Concerns are the files with the highest weighted score, worst first.
+	// Distinct from Hotspots: churn asks where change lands, this asks where
+	// known problems are, and the two are not the same question.
+	Concerns []Hotspot
+}
+
+// Ran reports whether analysis has been run at all, so a caller can distinguish
+// "no findings" from "never looked".
+func (a Analysis) Ran() bool { return a.Total > 0 || len(a.Tools) > 0 }
+
+// Concern is the analyzer view of one file: how much was found, weighted by how
+// much it matters, plus the worst few findings so the draft can cite evidence
+// rather than assert a number.
+type Concern struct {
+	Total    int
+	Errors   int
+	Warnings int
+	Info     int
+	// Score orders files by their worst problem first, then by how many of them.
+	//
+	// It is an ordering key, not a magnitude — the number itself means nothing.
+	// Additive weighting was tried and is wrong: with error=10 and info=1, twenty
+	// style nits outrank one remote code execution, which is precisely the
+	// ranking this exists to prevent. Severity classes are therefore
+	// lexicographic, so any file with an error precedes every file without one.
+	//
+	// The cost is that a file with fifty SQL-injection warnings sits below one
+	// with a single error. For an onboarding tour that is the right trade:
+	// point at the most serious thing first, and let volume break ties within
+	// a severity class.
+	Score int
+	// Top holds the most severe findings, worst first, capped for the prompt.
+	Top []FindingRef
+}
+
+// FindingRef is one finding, reduced to what a draft or a narrator needs.
+type FindingRef struct {
+	Tool     string
+	Rule     string
+	Severity string
+	Message  string
+	Line     int
+	Symbol   string
+}
+
+// Severity classes, ordered. The values are place values in Concern.Score's
+// lexicographic ordering, not weights that trade off against each other: no
+// quantity of the lower class reaches the one above it.
+const (
+	weightError   = 1_000_000
+	weightWarning = 1_000
+	weightInfo    = 1
+)
+
+func severityWeight(sev string) int {
+	switch strings.ToLower(sev) {
+	case "error", "critical", "high":
+		return weightError
+	case "warning", "medium":
+		return weightWarning
+	default:
+		return weightInfo
+	}
 }
 
 // Slice is the "follow one operation end to end" chapter's proposed trace: an
@@ -170,10 +250,18 @@ func Assemble(st *store.Store, root string, opts AssembleOptions) (*Context, err
 		return nil, fmt.Errorf("reading git signals: %w", err)
 	}
 
+	// Findings are optional grounding: `tds analyze` may never have been run,
+	// and a draft without them is thinner rather than wrong.
+	findings, err := st.Findings()
+	if err != nil {
+		return nil, fmt.Errorf("reading findings: %w", err)
+	}
+
 	churn := map[string]store.GitSignal{}
 	for _, s := range signals {
 		churn[s.Path] = s
 	}
+	concerns := summarizeFindings(findings)
 
 	ctx := &Context{
 		Root:        root,
@@ -188,7 +276,8 @@ func Assemble(st *store.Store, root string, opts AssembleOptions) (*Context, err
 	ctx.resolver = anchor.NewResolver(symbols)
 	ctx.Landmarks = rankLandmarks(symbols, entrypoints, churn, opts.MaxLandmarks*3+4)
 	ctx.LandmarkLimit = opts.MaxLandmarks
-	ctx.Hotspots = rankHotspots(files, churn, opts.MaxHotspots)
+	ctx.Hotspots = rankHotspots(files, churn, concerns, opts.MaxHotspots)
+	ctx.Analysis = summarizeAnalysis(findings, concerns, files, churn, opts.MaxHotspots)
 	ctx.Slice = proposeSlice(ctx, symbols, churn)
 	ctx.Conventions = observeConventions(files)
 	return ctx, nil
@@ -369,7 +458,11 @@ func authorPhrase(authors []string) string {
 
 // rankHotspots returns the files that change most — where a newcomer fixing a
 // bug is most likely to end up.
-func rankHotspots(files []store.File, churn map[string]store.GitSignal, max int) []Hotspot {
+// Hotspots stay ranked by churn. Findings are attached but do not reorder:
+// "where does work land" is the question this chapter asks, and churn answers
+// it. Where the known problems are is a different question, answered by
+// Analysis.Concerns — conflating them would make both rankings mean less.
+func rankHotspots(files []store.File, churn map[string]store.GitSignal, concerns map[string]Concern, max int) []Hotspot {
 	var out []Hotspot
 	for _, f := range files {
 		// Only code: a churning lockfile or translation bundle is noise here.
@@ -380,7 +473,10 @@ func rankHotspots(files []store.File, churn map[string]store.GitSignal, max int)
 		if !ok || g.Churn == 0 {
 			continue
 		}
-		out = append(out, Hotspot{Path: f.Path, Churn: g.Churn, Authors: g.Authors, AgeDays: g.AgeDays})
+		out = append(out, Hotspot{
+			Path: f.Path, Churn: g.Churn, Authors: g.Authors, AgeDays: g.AgeDays,
+			Concern: concerns[f.Path],
+		})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Churn != out[j].Churn {
@@ -392,6 +488,111 @@ func rankHotspots(files []store.File, churn map[string]store.GitSignal, max int)
 		out = out[:max]
 	}
 	return out
+}
+
+// maxTopFindings bounds how many findings one file contributes to the prompt.
+// The draft needs enough to be specific and not so much that a single noisy
+// file crowds out the rest of the grounding.
+const maxTopFindings = 3
+
+// summarizeFindings reduces raw findings to a per-file Concern.
+func summarizeFindings(findings []protocol.Finding) map[string]Concern {
+	if len(findings) == 0 {
+		return nil
+	}
+	byPath := map[string][]protocol.Finding{}
+	for _, f := range findings {
+		byPath[f.Path] = append(byPath[f.Path], f)
+	}
+	out := make(map[string]Concern, len(byPath))
+	for path, fs := range byPath {
+		c := Concern{Total: len(fs)}
+		for _, f := range fs {
+			w := severityWeight(f.Severity)
+			c.Score += w
+			switch w {
+			case weightError:
+				c.Errors++
+			case weightWarning:
+				c.Warnings++
+			default:
+				c.Info++
+			}
+		}
+		// Worst first, then by line so the order is stable across runs.
+		sort.SliceStable(fs, func(i, j int) bool {
+			wi, wj := severityWeight(fs[i].Severity), severityWeight(fs[j].Severity)
+			if wi != wj {
+				return wi > wj
+			}
+			return fs[i].StartLine < fs[j].StartLine
+		})
+		for _, f := range fs[:min(len(fs), maxTopFindings)] {
+			c.Top = append(c.Top, FindingRef{
+				Tool: f.Tool, Rule: f.Rule, Severity: f.Severity,
+				Message: f.Message, Line: f.StartLine, Symbol: f.Symbol,
+			})
+		}
+		out[path] = c
+	}
+	return out
+}
+
+// summarizeAnalysis builds the repo-wide picture and ranks the files carrying
+// the most weighted concern.
+func summarizeAnalysis(
+	findings []protocol.Finding,
+	concerns map[string]Concern,
+	files []store.File,
+	churn map[string]store.GitSignal,
+	max int,
+) Analysis {
+	if len(findings) == 0 {
+		return Analysis{}
+	}
+	var a Analysis
+	tools := map[string]bool{}
+	for _, f := range findings {
+		a.Total++
+		tools[f.Tool] = true
+		switch severityWeight(f.Severity) {
+		case weightError:
+			a.Errors++
+		case weightWarning:
+			a.Warnings++
+		default:
+			a.Info++
+		}
+	}
+	for t := range tools {
+		a.Tools = append(a.Tools, t)
+	}
+	sort.Strings(a.Tools)
+
+	lang := map[string]string{}
+	for _, f := range files {
+		lang[f.Path] = f.Language
+	}
+	for path, c := range concerns {
+		if lang[path] == "" {
+			continue // a finding on a file the map does not treat as code
+		}
+		g := churn[path]
+		a.Concerns = append(a.Concerns, Hotspot{
+			Path: path, Churn: g.Churn, Authors: g.Authors, AgeDays: g.AgeDays,
+			Concern: c,
+		})
+	}
+	sort.Slice(a.Concerns, func(i, j int) bool {
+		if a.Concerns[i].Concern.Score != a.Concerns[j].Concern.Score {
+			return a.Concerns[i].Concern.Score > a.Concerns[j].Concern.Score
+		}
+		return a.Concerns[i].Path < a.Concerns[j].Path
+	})
+	if len(a.Concerns) > max {
+		a.Concerns = a.Concerns[:max]
+	}
+	return a
 }
 
 // resourceName maps a controller-ish name to its likely record: "IssuesController"

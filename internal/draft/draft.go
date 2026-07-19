@@ -320,12 +320,103 @@ func planSideQuests(ch *PlanChapter, dctx *Context, used, seen map[string]bool) 
 			if a := authorPhrase(h.Authors); a != "" {
 				sb.WriteString(", " + a)
 			}
+			if s := concernPhrase(h.Concern); s != "" {
+				sb.WriteString("; " + s)
+			}
 			sb.WriteString("\n")
 		}
 		addStop(ch, used, seen, fmt.Sprintf("%s:1-40", lead.Path), "",
 			"if you're here to fix a bug: which of these are genuinely hot, and which just churn?",
 			strings.TrimSpace(sb.String()))
 	}
+
+	// Where the known problems are is a different question from where change
+	// lands, so it gets its own stop rather than being folded into churn.
+	if a := dctx.Analysis; a.Ran() && len(a.Concerns) > 0 {
+		lead := a.Concerns[0]
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "%s reported %d finding%s across the repository (%s). "+
+			"Weighted by severity, these files carry the most:\n\n",
+			joinAnd(a.Tools), a.Total, plural(a.Total), severityPhrase(a))
+		for _, c := range a.Concerns {
+			sb.WriteString(fmt.Sprintf("- `%s` — %s\n", c.Path, concernPhrase(c.Concern)))
+			for _, f := range c.Concern.Top {
+				fmt.Fprintf(&sb, "    - %s `%s` (%s, line %d): %s\n",
+					f.Tool, f.Rule, f.Severity, f.Line, firstSentence(f.Message))
+			}
+		}
+		sb.WriteString("\nThese are tool output, not a verdict — a finding can be a false " +
+			"positive or a deliberate choice. Say which of these a newcomer should care about.")
+		addStop(ch, used, seen, fmt.Sprintf("%s:1-40", lead.Path), "",
+			"what the analyzers flag, and how much of it matters",
+			strings.TrimSpace(sb.String()))
+	}
+}
+
+// concernPhrase renders a Concern as "3 findings: 1 error, 2 warnings", or "" if
+// nothing was found.
+func concernPhrase(c Concern) string {
+	if c.Total == 0 {
+		return ""
+	}
+	var parts []string
+	if c.Errors > 0 {
+		parts = append(parts, fmt.Sprintf("%d error%s", c.Errors, plural(c.Errors)))
+	}
+	if c.Warnings > 0 {
+		parts = append(parts, fmt.Sprintf("%d warning%s", c.Warnings, plural(c.Warnings)))
+	}
+	if c.Info > 0 {
+		parts = append(parts, fmt.Sprintf("%d info", c.Info))
+	}
+	return fmt.Sprintf("%d finding%s (%s)", c.Total, plural(c.Total), strings.Join(parts, ", "))
+}
+
+func severityPhrase(a Analysis) string {
+	var parts []string
+	if a.Errors > 0 {
+		parts = append(parts, fmt.Sprintf("%d error%s", a.Errors, plural(a.Errors)))
+	}
+	if a.Warnings > 0 {
+		parts = append(parts, fmt.Sprintf("%d warning%s", a.Warnings, plural(a.Warnings)))
+	}
+	if a.Info > 0 {
+		parts = append(parts, fmt.Sprintf("%d info", a.Info))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+func joinAnd(items []string) string {
+	switch len(items) {
+	case 0:
+		return "The analyzers"
+	case 1:
+		return items[0]
+	case 2:
+		return items[0] + " and " + items[1]
+	default:
+		return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+	}
+}
+
+// firstSentence keeps a finding's message to its useful first line: brakeman in
+// particular emits multi-sentence explanations that swamp the list.
+func firstSentence(msg string) string {
+	msg = strings.TrimSpace(strings.ReplaceAll(msg, "\n", " "))
+	if i := strings.Index(msg, ". "); i > 0 {
+		return msg[:i+1]
+	}
+	if len(msg) > 140 {
+		return strings.TrimSpace(msg[:140]) + "…"
+	}
+	return msg
 }
 
 // serialize writes the plan as a `.tour.md`.

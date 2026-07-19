@@ -345,3 +345,103 @@ func assertParses(t *testing.T, md string) {
 		t.Fatalf("document does not parse as a tour: %v\n\n%s", err, md)
 	}
 }
+
+// TestSeverityWeightingBeatsRawCounts covers TDS-39: on Redmine 63 of 114
+// findings are one info-level style rule, so ranking by count would bury eight
+// brakeman errors under it.
+func TestSeverityWeightingBeatsRawCounts(t *testing.T) {
+	noisy := "app/noisy.rb"
+	risky := "app/risky.rb"
+	var findings []protocol.Finding
+	for i := 0; i < 20; i++ {
+		findings = append(findings, protocol.Finding{
+			Path: noisy, StartLine: i + 1, Severity: "info",
+			Tool: "rubocop", Rule: "Style/OneClassPerFile", Message: "style",
+		})
+	}
+	findings = append(findings, protocol.Finding{
+		Path: risky, StartLine: 227, Severity: "error",
+		Tool: "brakeman", Rule: "Remote Code Execution", Message: "Unsafe reflection",
+	})
+
+	concerns := summarizeFindings(findings)
+	if concerns[noisy].Total <= concerns[risky].Total {
+		t.Fatal("the noisy file should have more findings — otherwise this proves nothing")
+	}
+	if concerns[risky].Score <= concerns[noisy].Score {
+		t.Errorf("weighted score: risky %d must beat noisy %d",
+			concerns[risky].Score, concerns[noisy].Score)
+	}
+
+	files := []store.File{{Path: noisy, Language: "ruby"}, {Path: risky, Language: "ruby"}}
+	a := summarizeAnalysis(findings, concerns, files, nil, 5)
+	if len(a.Concerns) == 0 || a.Concerns[0].Path != risky {
+		t.Errorf("one error should outrank twenty style nits, got %+v", a.Concerns)
+	}
+	if a.Errors != 1 || a.Info != 20 {
+		t.Errorf("severity tally = %d errors / %d info, want 1 / 20", a.Errors, a.Info)
+	}
+	if len(a.Tools) != 2 || a.Tools[0] != "brakeman" {
+		t.Errorf("tools = %v, want both, sorted", a.Tools)
+	}
+}
+
+// TestConcernKeepsWorstFindingsFirst — the draft cites only a few findings per
+// file, so they must be the ones that matter.
+func TestConcernKeepsWorstFindingsFirst(t *testing.T) {
+	p := "a.rb"
+	concerns := summarizeFindings([]protocol.Finding{
+		{Path: p, StartLine: 10, Severity: "info", Tool: "rubocop", Rule: "Style/X"},
+		{Path: p, StartLine: 20, Severity: "error", Tool: "brakeman", Rule: "SQL Injection"},
+		{Path: p, StartLine: 30, Severity: "warning", Tool: "brakeman", Rule: "File Access"},
+		{Path: p, StartLine: 40, Severity: "info", Tool: "rubocop", Rule: "Style/Y"},
+	})
+	top := concerns[p].Top
+	if len(top) != maxTopFindings {
+		t.Fatalf("cited %d findings, want the cap of %d", len(top), maxTopFindings)
+	}
+	if top[0].Rule != "SQL Injection" || top[1].Rule != "File Access" {
+		t.Errorf("worst-first ordering broken: %+v", top)
+	}
+}
+
+// TestAnalysisAbsentWhenNotRun — drafting must work before `tds analyze` has
+// ever been run, and must not claim a clean repo when nobody looked.
+func TestAnalysisAbsentWhenNotRun(t *testing.T) {
+	a := summarizeAnalysis(nil, nil, nil, nil, 5)
+	if a.Ran() {
+		t.Error("no findings and no tools means analysis never ran")
+	}
+	if summarizeFindings(nil) != nil {
+		t.Error("no findings should produce no concerns")
+	}
+	if got := concernPhrase(Concern{}); got != "" {
+		t.Errorf("empty concern should render as nothing, got %q", got)
+	}
+}
+
+func TestFirstSentenceTrimsBrakemanProse(t *testing.T) {
+	got := firstSentence("Possible SQL injection. Brakeman found this in a scope. See docs.")
+	if got != "Possible SQL injection." {
+		t.Errorf("firstSentence = %q", got)
+	}
+	if got := firstSentence("no trailing period here"); got != "no trailing period here" {
+		t.Errorf("a single sentence should pass through, got %q", got)
+	}
+}
+
+// TestSeverityClassesDoNotTradeOff pins the fix: no quantity of a lower
+// severity class may overtake a single finding of a higher one.
+func TestSeverityClassesDoNotTradeOff(t *testing.T) {
+	many := make([]protocol.Finding, 0, 500)
+	for i := 0; i < 500; i++ {
+		many = append(many, protocol.Finding{Path: "noisy.rb", StartLine: i + 1, Severity: "warning", Tool: "t"})
+	}
+	one := []protocol.Finding{{Path: "risky.rb", StartLine: 1, Severity: "error", Tool: "t"}}
+
+	noisy := summarizeFindings(many)["noisy.rb"]
+	risky := summarizeFindings(one)["risky.rb"]
+	if risky.Score <= noisy.Score {
+		t.Errorf("one error (%d) must outrank 500 warnings (%d)", risky.Score, noisy.Score)
+	}
+}
