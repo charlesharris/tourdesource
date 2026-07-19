@@ -328,3 +328,17 @@ html, body { height: 100%; }
 .stop-findings-label { font-size: 11px; color: var(--color-neutral-600); }
 .stop-findings .finding-list { padding: 0 var(--space-3) var(--space-2); border-top: 1px solid var(--color-divider); }
 .stop-findings .view-more { padding: 0 var(--space-3) var(--space-2); margin: 0; }
+
+/* Inline finding markers in the code pane (TDS-32). A dot in the gutter beside
+   the line number, colored by severity; the rule and message are in its title.
+   The line number's own tint is a second, redundant cue so the mark is not the
+   only signal. */
+.chroma .lnt.has-finding { position: relative; }
+.line-mark { position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+  width: 6px; height: 6px; border-radius: 50%; cursor: help; }
+.line-mark:focus { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.line-mark-error { background: #b3261e; }
+.line-mark-warning { background: var(--color-accent); }
+.line-mark-info { background: var(--color-neutral-500); }
+.chroma .lnt.finding-line-error > .lnlinks { color: #b3261e; font-weight: 600; }
+.chroma .lnt.finding-line-warning > .lnlinks { color: var(--color-accent-800); }

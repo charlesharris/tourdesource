@@ -229,4 +229,51 @@
       });
     });
   }
+
+  /* File page: mark flagged lines in the code pane. The code is highlighted
+     server-side into a Chroma line-number table, so annotations are attached
+     here rather than baked into the HTML — a marker per finding line, colored
+     by severity, with the rule and message reachable from it. */
+  var codePane = document.querySelector("[data-code]");
+  var findingData = codePane && codePane.querySelector("[data-findings]");
+  if (codePane && findingData) {
+    var findings;
+    try {
+      findings = JSON.parse(findingData.textContent);
+    } catch (e) {
+      findings = [];
+    }
+    var rank = { error: 0, critical: 0, high: 0, fatal: 0, warning: 1, warn: 1, medium: 1 };
+    // Worst severity per line, and the findings on it, so a line flagged twice
+    // shows the more serious color and lists both.
+    var byLine = {};
+    findings.forEach(function (f) {
+      var line = f.line || 1;
+      (byLine[line] = byLine[line] || []).push(f);
+    });
+
+    Object.keys(byLine).forEach(function (line) {
+      var gutter = document.getElementById("L-" + line);
+      if (!gutter) return;
+      var fs = byLine[line];
+      var sev = fs.reduce(function (worst, f) {
+        var r = rank[(f.severity || "").toLowerCase()];
+        return (r === undefined ? 2 : r) < worst ? (r === undefined ? 2 : r) : worst;
+      }, 2);
+      var sevName = sev === 0 ? "error" : sev === 1 ? "warning" : "info";
+
+      gutter.classList.add("has-finding", "finding-line-" + sevName);
+      var mark = document.createElement("span");
+      mark.className = "line-mark line-mark-" + sevName;
+      mark.setAttribute("tabindex", "0");
+      mark.setAttribute("role", "button");
+      mark.setAttribute("aria-label", fs.length + " finding" + (fs.length === 1 ? "" : "s") + " on line " + line);
+      // The detail is a plain title tooltip, which needs no popup machinery and
+      // works with the keyboard focus above.
+      mark.title = fs.map(function (f) {
+        return f.tool + " · " + f.rule + ": " + f.message;
+      }).join("\n");
+      gutter.appendChild(mark);
+    });
+  }
 })();

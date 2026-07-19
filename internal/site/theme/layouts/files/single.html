@@ -16,7 +16,16 @@
         <span class="tag tag-neutral mono">{{ .Params.subsystem }}</span>
       </div>
     </div>
-    <div class="code-scroll">
+    <div class="code-scroll" data-code>
+      {{ with .Params.findings }}
+      {{/* Findings ride along as JSON rather than an attribute: the code is
+           highlighted server-side, so app.js attaches a marker per line. A
+           script block keeps quotes intact, which an attribute mangles. */}}
+      {{/* safeJS: inside a <script>, Go's html/template JS-escapes content into
+           a string literal. jsonify already produced a valid JS array, so this
+           says "leave it as data" rather than re-encoding it. */}}
+      <script type="application/json" data-findings>{{ . | jsonify | safeJS }}</script>
+      {{ end }}
       {{ $opts := printf "linenos=true,hl_lines=%s" (.Params.hl | default "") }}
       {{ highlight (.Params.code | default "") (.Params.lang | default "text") $opts }}
     </div>
