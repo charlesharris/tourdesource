@@ -235,23 +235,48 @@ See [`docs/design.md`](docs/design.md) for the full design,
 [`docs/tmux-orchestration.md`](docs/tmux-orchestration.md) for how `--narrate`
 drives the assistant.
 
-## Build from source
-
-Requires **Go 1.26+**. The Ruby provider requires **Ruby 3.4+** (prism ships as a
-default gem).
+## Install
 
 ```sh
-make build        # -> ./bin/tds
-make check        # lint + tests
+git clone https://github.com/charlesharris/tourdesource
+cd tourdesource
+make install
 ```
 
-The Ruby provider isn't published globally yet, so point `tds` at the in-repo
-build when mapping Ruby code:
+`make install` checks the toolchain, builds `tds` onto your `PATH` (wherever
+`go install` puts binaries), and wires the Ruby provider so it is discovered
+automatically — no environment variables. Then, against any repository:
 
 ```sh
-export TDS_PROVIDER_RUBY="$PWD/providers/ruby/exe/tds-provider-ruby"
-./bin/tds map .
-./bin/tds build docs/tours/ruby-provider.tour.md
+tds map    ~/src/some-repo
+tds draft  ~/src/some-repo                 # add --narrate for AI prose
+tds analyze ~/src/some-repo                # optional: linter/security/complexity views
+tds build  ~/src/some-repo/.tds/*.tour.md --repo ~/src/some-repo
+cd ~/src/some-repo/.tds/site && python3 -m http.server 8000
+```
+
+To keep the subject repo's checkout clean, write everything out of tree — see
+[Touring a repository you don't own](#touring-a-repository-you-dont-own).
+
+### Prerequisites
+
+`make install` verifies these and tells you what is missing:
+
+| Tool | Version | For |
+|---|---|---|
+| **Go** | 1.25+ | building the core |
+| **Hugo** | extended 0.128+ | `tds build` (site rendering) — `brew install hugo` |
+| **Ruby** | 3.4+ | the Ruby/Rails provider (prism ships as a default gem) — optional; other languages degrade to line-range anchors |
+
+The **analyzers** (`tds analyze`) are the repo's own tools — `rubocop`,
+`brakeman`, `flog`, `simplecov`, `sorbet`. Each is availability-gated: whatever
+is installed runs, the rest are reported as skipped rather than failing.
+
+Working on tds itself:
+
+```sh
+make build        # -> ./bin/tds, no install
+make check        # lint + tests
 ```
 
 ## Documentation

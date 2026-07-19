@@ -11,7 +11,11 @@ build: ## Build the tds binary into ./bin
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) .
 
 .PHONY: install
-install: ## Install tds into GOBIN
+install: ## Check the toolchain, build tds onto PATH, and wire the Ruby provider
+	@./scripts/install.sh
+
+.PHONY: install-core
+install-core: ## Install just the tds binary into GOBIN (no preflight, no provider)
 	go install -ldflags "$(LDFLAGS)" .
 
 # The tree-sitter fallback provider is a separate CGO module, deliberately kept
@@ -25,20 +29,9 @@ provider-treesitter: ## Build the tree-sitter fallback provider into ./bin
 .PHONY: providers
 providers: provider-treesitter ## Build all bundled provider binaries
 
-# The viewer is a Preact app compiled to internal/viewer/assets/{viewer.js,css},
-# which are COMMITTED and go:embed'd. `make build` must never need Node — this
-# target is for changing the viewer, not for building tds.
-.PHONY: viewer
-viewer: ## Rebuild the viewer frontend into internal/viewer/assets
-	cd viewer && npm install --silent && npm run build
-
-.PHONY: viewer-dev
-viewer-dev: ## Run the viewer dev server against a built tour bundle
-	cd viewer && npm run dev
-
-.PHONY: viewer-check
-viewer-check: ## Typecheck the viewer sources
-	cd viewer && npm run check
+# The site is rendered by Hugo from the theme embedded at internal/site/theme
+# (go:embed). `make build` needs no Node; iterate on the theme with
+# `tds build ... --keep-project` then `hugo server` in the generated project.
 
 .PHONY: run
 run: ## Run tds (pass args with ARGS="...")
