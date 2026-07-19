@@ -239,9 +239,7 @@ func writeData(in Input, dir string, opts Options) (*Result, error) {
 	}
 
 	stops := 0
-	for _, ch := range tour.Chapters {
-		stops += len(ch.Stops)
-	}
+	walkSiteStops(tour, func(TourStop) { stops++ })
 	return &Result{
 		Pages:      pages,
 		Subsystems: len(subs),
@@ -275,16 +273,16 @@ func writeFilePages(
 		importsByPath[im.Path] = append(importsByPath[im.Path], im.Target)
 	}
 	// Which tour stops touch a file, so a file page can point back at the tour.
+	// Detour stops count too — a file reached only by a side-quest is still
+	// visited by the tour, and its page should say so.
 	stopsByPath := map[string][]string{}
 	firstHL := map[string]string{}
-	for _, ch := range tour.Chapters {
-		for _, s := range ch.Stops {
-			stopsByPath[s.File] = append(stopsByPath[s.File], s.ID)
-			if _, ok := firstHL[s.File]; !ok {
-				firstHL[s.File] = s.HL
-			}
+	walkSiteStops(tour, func(s TourStop) {
+		stopsByPath[s.File] = append(stopsByPath[s.File], s.ID)
+		if _, ok := firstHL[s.File]; !ok {
+			firstHL[s.File] = s.HL
 		}
-	}
+	})
 
 	now := time.Now()
 	count := 0

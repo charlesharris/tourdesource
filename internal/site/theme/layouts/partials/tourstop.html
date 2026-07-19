@@ -1,0 +1,62 @@
+{{/*
+  One tour stop: prose beside its code, with any detours nested beneath it.
+
+  Recursive — a detour stop renders through this same partial, so a side-quest
+  reads exactly like the main path. Context: dict "stop" <TourStop> "chapter"
+  <string> "depth" <int>.
+*/}}
+{{ $stop := .stop }}
+{{ $ch := .chapter }}
+{{ $depth := .depth | default 0 }}
+<article class="tour-stop{{ if gt $depth 0 }} tour-stop-detour{{ end }}" id="{{ $stop.id }}"
+         {{ if eq $depth 0 }}data-tour-stop{{ end }}>
+  <div class="tour-stop-prose">
+    {{ if eq $depth 0 }}<p class="kicker mono">{{ $ch }}</p>{{ end }}
+    <h3 class="mono">{{ $stop.loc }}</h3>
+    {{ with $stop.file }}
+    <a class="mono link tour-file" href="{{ partial "fileurl" . }}">{{ . }}</a>
+    {{ end }}
+
+    {{/* Anchor provenance: shown only when the anchor did not resolve cleanly. */}}
+    {{ with $stop.anchor }}
+      {{ if not .resolved }}
+      <p class="anchor-note anchor-note-unresolved mono">
+        Unresolved anchor <code>{{ .raw }}</code>{{ with .reason }} — {{ . }}{{ end }}.
+        No code is highlighted for this stop.
+      </p>
+      {{ else if .loose }}
+      <p class="anchor-note anchor-note-loose mono">
+        Matched <code>{{ .raw }}</code> loosely — the symbol was found by name
+        without its container, so the lines may not be the ones intended.
+      </p>
+      {{ end }}
+    {{ end }}
+
+    <div class="prose-lg tour-prose">{{ $stop.prose | safeHTML }}</div>
+  </div>
+
+  <div class="tour-stop-code code-scroll">
+    {{ with (where site.RegularPages "Params.path" $stop.file) }}
+      {{ $pg := index . 0 }}
+      {{ highlight ($pg.Params.code | default "") ($pg.Params.lang | default "text") (printf "linenos=true,hl_lines=%s" $stop.hl) }}
+    {{ end }}
+  </div>
+
+  {{ with $stop.detours }}
+  <div class="tour-detours">
+    {{ range . }}
+    <details class="detour" data-detour>
+      <summary class="detour-summary mono">
+        <span class="detour-badge mono">Side-quest</span>{{ .title }}
+      </summary>
+      <div class="detour-body">
+        {{ with .intro }}<div class="prose detour-intro">{{ . | safeHTML }}</div>{{ end }}
+        {{ range .stops }}
+          {{ partial "tourstop.html" (dict "stop" . "chapter" $ch "depth" (add $depth 1)) }}
+        {{ end }}
+      </div>
+    </details>
+    {{ end }}
+  </div>
+  {{ end }}
+</article>

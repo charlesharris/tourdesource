@@ -7,29 +7,45 @@
     <div class="tour-chapter mono">{{ .title }}</div>
     {{ range .stops }}
     <a class="tour-outline-stop mono" href="#{{ .id }}" data-stop-link>{{ .loc }}</a>
+    {{ range .detours }}
+    {{ range .stops }}
+    <a class="tour-outline-stop tour-outline-detour mono" href="#{{ .id }}" data-stop-link>{{ .loc }}</a>
+    {{ end }}
+    {{ end }}
     {{ end }}
     {{ end }}
     <p class="tour-hint mono text-muted">Use J / K to move between stops.</p>
   </aside>
   <section class="tour-stops">
+    {{/* Tour front matter: title, who it is for, and the author's introduction. */}}
+    {{ if or $t.intro $t.audience }}
+    <header class="tour-intro">
+      {{ with $t.title }}<h2>{{ . }}</h2>{{ end }}
+      {{ with $t.audience }}<p class="kicker mono">For {{ . }}</p>{{ end }}
+      {{ with $t.intro }}<div class="prose-lg">{{ . | safeHTML }}</div>{{ end }}
+    </header>
+    {{ end }}
+
+    {{/* Anchors that did not resolve are surfaced, not buried: a reader should
+         know the tour could not find some of the code it describes. */}}
+    {{ with $t.warnings }}
+    <div class="tour-warnings">
+      <p class="mono"><strong>{{ len . }} anchor{{ if ne (len .) 1 }}s{{ end }} did not resolve.</strong>
+      The affected stops show their prose without highlighted code.</p>
+      <ul class="mono">{{ range . }}<li>{{ . }}</li>{{ end }}</ul>
+    </div>
+    {{ end }}
+
     {{ range $t.chapters }}
     {{ $ch := .title }}
+    {{ with .intro }}
+    <div class="tour-chapter-intro">
+      <p class="kicker mono">{{ $ch }}</p>
+      <div class="prose-lg">{{ . | safeHTML }}</div>
+    </div>
+    {{ end }}
     {{ range .stops }}
-    {{ $stop := . }}
-    <article class="tour-stop" id="{{ $stop.id }}" data-tour-stop>
-      <div class="tour-stop-prose">
-        <p class="kicker mono">{{ $ch }}</p>
-        <h3 class="mono">{{ $stop.loc }}</h3>
-        <a class="mono link tour-file" href="{{ partial "fileurl" $stop.file }}">{{ $stop.file }}</a>
-        <p class="prose-lg">{{ $stop.prose }}</p>
-      </div>
-      <div class="tour-stop-code code-scroll">
-        {{ with (where site.RegularPages "Params.path" $stop.file) }}
-          {{ $pg := index . 0 }}
-          {{ highlight ($pg.Params.code | default "") ($pg.Params.lang | default "text") (printf "linenos=true,hl_lines=%s" $stop.hl) }}
-        {{ end }}
-      </div>
-    </article>
+      {{ partial "tourstop.html" (dict "stop" . "chapter" $ch "depth" 0) }}
     {{ end }}
     {{ end }}
   </section>

@@ -74,20 +74,47 @@ type Subsystem struct {
 
 // SiteTour is data/tour.json.
 type SiteTour struct {
+	Title    string        `json:"title,omitempty"`
+	Intro    string        `json:"intro,omitempty"` // rendered HTML
+	Audience string        `json:"audience,omitempty"`
+	Warnings []string      `json:"warnings,omitempty"`
 	Chapters []TourChapter `json:"chapters"`
 }
 
 type TourChapter struct {
 	Title string     `json:"title"`
+	Intro string     `json:"intro,omitempty"` // rendered HTML
 	Stops []TourStop `json:"stops"`
 }
 
 type TourStop struct {
-	ID    string `json:"id"`   // deep-linkable: /tour/#<id>
-	Loc   string `json:"loc"`  // heading shown for the stop
-	File  string `json:"file"` // repo path; its code renders beside the prose
-	HL    string `json:"hl"`   // Chroma line range, e.g. "10-25"
-	Prose string `json:"prose"`
+	ID      string       `json:"id"`    // deep-linkable: /tour/#<id>
+	Loc     string       `json:"loc"`   // heading shown for the stop
+	File    string       `json:"file"`  // repo path; its code renders beside the prose
+	HL      string       `json:"hl"`    // Chroma line range, e.g. "10-25"
+	Prose   string       `json:"prose"` // rendered HTML
+	Anchor  StopAnchor   `json:"anchor"`
+	Detours []TourDetour `json:"detours,omitempty"`
+}
+
+// TourDetour is a collapsible side-quest hanging off a stop. It nests: a detour
+// stop may itself carry detours.
+type TourDetour struct {
+	Title string     `json:"title"`
+	Intro string     `json:"intro,omitempty"` // rendered HTML
+	Stops []TourStop `json:"stops"`
+}
+
+// StopAnchor is the provenance of a stop's code location. The theme shows it
+// when an anchor did not resolve cleanly: a tour that silently points at the
+// wrong lines is worse than one that admits it could not find them.
+type StopAnchor struct {
+	Raw      string `json:"raw,omitempty"`
+	Symbol   string `json:"symbol,omitempty"`
+	Kind     string `json:"kind,omitempty"` // symbol | line-range | unresolved
+	Resolved bool   `json:"resolved"`
+	Loose    bool   `json:"loose,omitempty"`  // matched via the #/. loose fallback
+	Reason   string `json:"reason,omitempty"` // why unresolved
 }
 
 // SiteSymbols is data/symbols.json.
@@ -189,32 +216,75 @@ func buildManifest(in Input, subs []Subsystem, columns []string) SiteManifest {
 	}
 }
 
-// buildTour flattens the compiled tour into the theme's shape.
+// buildTour projects the compiled tour into the theme's shape, preserving the
+// structure the tour format actually has.
 //
-// The theme renders a flat stop list with a chapter kicker, so detour stops are
-// lifted into their parent chapter rather than dropped — a side-quest is still
-// part of the tour, and losing it would silently shrink the reader's path.
+// Detours stay nested rather than being lifted into the parent chapter: a
+// side-quest is deliberately off the main path, and flattening it both misleads
+// the reader about the route and destroys the author's on-rails ordering. Prose
+// stays as rendered HTML — goldmark leaves authored raw HTML escaped, so the
+// template can emit it without granting script injection.
 func buildTour(m *manifest.Manifest) SiteTour {
-	var out SiteTour
+	out := SiteTour{
+		Title:    m.Title,
+		Intro:    m.Intro,
+		Audience: m.Audience,
+		Warnings: m.Warnings,
+	}
 	for _, ch := range m.Chapters {
-		tc := TourChapter{Title: ch.Title}
-		var walk func(stops []manifest.Stop)
-		walk = func(stops []manifest.Stop) {
-			for _, s := range stops {
-				tc.Stops = append(tc.Stops, TourStop{
-					ID:    s.ID,
-					Loc:   stopLabel(s),
-					File:  s.Anchor.Path,
-					HL:    lineRange(s.Anchor),
-					Prose: htmlToText(s.Prose),
-				})
-				for _, d := range s.Detours {
-					walk(d.Stops)
-				}
+		out.Chapters = append(out.Chapters, TourChapter{
+			Title: ch.Title,
+			Intro: ch.Intro,
+			Stops: buildStops(ch.Stops),
+		})
+	}
+	return out
+}
+
+// walkSiteStops visits every stop in the tour, detours included, in reading
+// order.
+func walkSiteStops(t SiteTour, fn func(TourStop)) {
+	var walk func([]TourStop)
+	walk = func(stops []TourStop) {
+		for _, s := range stops {
+			fn(s)
+			for _, d := range s.Detours {
+				walk(d.Stops)
 			}
 		}
+	}
+	for _, ch := range t.Chapters {
 		walk(ch.Stops)
-		out.Chapters = append(out.Chapters, tc)
+	}
+}
+
+// buildStops converts a stop list, recursing through detours.
+func buildStops(stops []manifest.Stop) []TourStop {
+	var out []TourStop
+	for _, s := range stops {
+		ts := TourStop{
+			ID:    s.ID,
+			Loc:   stopLabel(s),
+			File:  s.Anchor.Path,
+			HL:    lineRange(s.Anchor),
+			Prose: s.Prose,
+			Anchor: StopAnchor{
+				Raw:      s.Anchor.Raw,
+				Symbol:   s.Anchor.Symbol,
+				Kind:     s.Anchor.Kind,
+				Resolved: s.Anchor.Resolved,
+				Loose:    s.Anchor.Loose,
+				Reason:   s.Anchor.Reason,
+			},
+		}
+		for _, d := range s.Detours {
+			ts.Detours = append(ts.Detours, TourDetour{
+				Title: d.Title,
+				Intro: d.Intro,
+				Stops: buildStops(d.Stops),
+			})
+		}
+		out = append(out, ts)
 	}
 	return out
 }

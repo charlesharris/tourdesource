@@ -70,32 +70,120 @@ func TestFrontmatterNestsCustomParams(t *testing.T) {
 // TestTourLiftsDetourStops — the theme renders a flat stop list, so a detour
 // stop must be carried into its chapter rather than dropped. Losing one would
 // silently shrink the reader's path.
-func TestTourLiftsDetourStops(t *testing.T) {
+// TestTourKeepsDetoursNested covers TDS-63: a side-quest is deliberately off the
+// main path, so it must stay attached to its parent stop rather than being
+// lifted into the chapter's linear sequence.
+func TestTourKeepsDetoursNested(t *testing.T) {
+	m := tourWithDetour()
+	got := buildTour(m)
+
+	if len(got.Chapters) != 1 {
+		t.Fatalf("want 1 chapter, got %d", len(got.Chapters))
+	}
+	stops := got.Chapters[0].Stops
+	if len(stops) != 1 {
+		t.Fatalf("want 1 top-level stop (the detour stop must not be lifted), got %d", len(stops))
+	}
+	if len(stops[0].Detours) != 1 || len(stops[0].Detours[0].Stops) != 1 {
+		t.Fatalf("detour stop was lost: %+v", stops[0].Detours)
+	}
+	if title := stops[0].Detours[0].Title; title != "aside" {
+		t.Errorf("detour title = %q, want %q", title, "aside")
+	}
+	if hl := stops[0].HL; hl != "1-4" {
+		t.Errorf("hl = %q, want the Chroma range 1-4", hl)
+	}
+	if hl := stops[0].Detours[0].Stops[0].HL; hl != "7" {
+		t.Errorf("single-line detour hl = %q, want 7", hl)
+	}
+}
+
+// TestTourKeepsProseAsHTML covers TDS-63: prose is authored Markdown rendered to
+// HTML, and flattening it to text threw away every list, link and code span.
+func TestTourKeepsProseAsHTML(t *testing.T) {
+	m := tourWithDetour()
+	got := buildTour(m)
+
+	if p := got.Chapters[0].Stops[0].Prose; p != "<p>one</p>" {
+		t.Errorf("prose = %q, want the rendered HTML preserved", p)
+	}
+	if p := got.Chapters[0].Stops[0].Detours[0].Stops[0].Prose; p != "<p>two</p>" {
+		t.Errorf("detour prose = %q, want the rendered HTML preserved", p)
+	}
+}
+
+// TestTourCarriesAnchorProvenance covers TDS-63: the theme can only warn about a
+// bad anchor if the projection hands it the resolution result.
+func TestTourCarriesAnchorProvenance(t *testing.T) {
+	m := &manifest.Manifest{Chapters: []manifest.Chapter{{
+		Stops: []manifest.Stop{
+			{ID: "ok", Anchor: manifest.Anchor{Path: "a.rb", Symbol: "A", Kind: "symbol", StartLine: 1, EndLine: 2, Resolved: true}},
+			{ID: "loose", Anchor: manifest.Anchor{Path: "b.rb", Raw: "b.rb#B", Kind: "symbol", StartLine: 3, EndLine: 4, Resolved: true, Loose: true}},
+			{ID: "bad", Anchor: manifest.Anchor{Path: "c.rb", Raw: "c.rb#Nope", Kind: "unresolved", Reason: "symbol not found"}},
+		},
+	}}}
+	stops := buildTour(m).Chapters[0].Stops
+
+	if a := stops[0].Anchor; !a.Resolved || a.Loose {
+		t.Errorf("clean anchor = %+v, want resolved and not loose", a)
+	}
+	if a := stops[1].Anchor; !a.Loose || a.Raw != "b.rb#B" {
+		t.Errorf("loose anchor = %+v, want Loose with its raw string", a)
+	}
+	if a := stops[2].Anchor; a.Resolved || a.Reason != "symbol not found" {
+		t.Errorf("unresolved anchor = %+v, want the reason carried through", a)
+	}
+}
+
+// TestTourCarriesFrontMatter covers TDS-63: the tour's own introduction,
+// audience and compile warnings were dropped entirely.
+func TestTourCarriesFrontMatter(t *testing.T) {
 	m := &manifest.Manifest{
+		Title: "T", Intro: "<p>why</p>", Audience: "new backend engineers",
+		Warnings: []string{"c.rb#Nope: symbol not found"},
+		Chapters: []manifest.Chapter{{Title: "Ch", Intro: "<p>chapter why</p>"}},
+	}
+	got := buildTour(m)
+
+	if got.Title != "T" || got.Intro != "<p>why</p>" || got.Audience != "new backend engineers" {
+		t.Errorf("front matter lost: %+v", got)
+	}
+	if len(got.Warnings) != 1 {
+		t.Errorf("warnings = %v, want the unresolved-anchor note carried through", got.Warnings)
+	}
+	if got.Chapters[0].Intro != "<p>chapter why</p>" {
+		t.Errorf("chapter intro = %q, want it preserved", got.Chapters[0].Intro)
+	}
+}
+
+// TestWalkSiteStopsCountsDetours covers TDS-63: the stop count and the per-file
+// "visited by the tour" back-links must see detour stops too.
+func TestWalkSiteStopsCountsDetours(t *testing.T) {
+	var ids []string
+	walkSiteStops(buildTour(tourWithDetour()), func(s TourStop) { ids = append(ids, s.ID) })
+	if len(ids) != 2 || ids[0] != "s1" || ids[1] != "s2" {
+		t.Errorf("walk visited %v, want [s1 s2] in reading order", ids)
+	}
+}
+
+// tourWithDetour is a one-chapter tour whose only stop carries a side-quest.
+func tourWithDetour() *manifest.Manifest {
+	return &manifest.Manifest{
 		Title: "T",
 		Chapters: []manifest.Chapter{{
 			Title: "Ch",
 			Stops: []manifest.Stop{{
 				ID: "s1", Prose: "<p>one</p>",
-				Anchor:  manifest.Anchor{Path: "a.rb", Symbol: "A", StartLine: 1, EndLine: 4, Resolved: true},
-				Detours: []manifest.Detour{{Title: "aside", Stops: []manifest.Stop{{ID: "s2", Prose: "<p>two</p>", Anchor: manifest.Anchor{Path: "b.rb", StartLine: 7, EndLine: 7, Resolved: true}}}}},
+				Anchor: manifest.Anchor{Path: "a.rb", Symbol: "A", StartLine: 1, EndLine: 4, Resolved: true},
+				Detours: []manifest.Detour{{
+					Title: "aside",
+					Stops: []manifest.Stop{{
+						ID: "s2", Prose: "<p>two</p>",
+						Anchor: manifest.Anchor{Path: "b.rb", StartLine: 7, EndLine: 7, Resolved: true},
+					}},
+				}},
 			}},
 		}},
-	}
-	got := buildTour(m)
-
-	if len(got.Chapters) != 1 || len(got.Chapters[0].Stops) != 2 {
-		t.Fatalf("want 2 stops (the detour stop lifted), got %d", len(got.Chapters[0].Stops))
-	}
-	if got.Chapters[0].Stops[0].HL != "1-4" {
-		t.Errorf("hl = %q, want the Chroma range 1-4", got.Chapters[0].Stops[0].HL)
-	}
-	if got.Chapters[0].Stops[1].HL != "7" {
-		t.Errorf("single-line hl = %q, want 7", got.Chapters[0].Stops[1].HL)
-	}
-	// The theme puts prose inside a <p>, so HTML would nest blocks illegally.
-	if strings.Contains(got.Chapters[0].Stops[0].Prose, "<") {
-		t.Errorf("prose should be flattened to text, got %q", got.Chapters[0].Stops[0].Prose)
 	}
 }
 

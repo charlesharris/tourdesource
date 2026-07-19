@@ -117,6 +117,25 @@
     stops.forEach(function (s) { obs.observe(s); });
   }
 
+  /* A detour stop is deep-linkable, but its <details> starts closed, so a link
+     to it would otherwise scroll to nothing. Open every ancestor first, then
+     scroll — the browser's own hash handling has already run by this point. */
+  function revealHash() {
+    var id = location.hash.slice(1);
+    if (!id) return;
+    var el = document.getElementById(id);
+    if (!el) return;
+    var open = false;
+    for (var n = el.parentNode; n && n !== document; n = n.parentNode) {
+      if (n.tagName === "DETAILS" && !n.open) { n.open = true; open = true; }
+    }
+    if (open) el.scrollIntoView();
+  }
+  if (document.querySelector("[data-detour]")) {
+    revealHash();
+    window.addEventListener("hashchange", revealHash);
+  }
+
   /* Symbols: live text filter */
   var sf = document.querySelector("[data-sym-filter]");
   if (sf) {
