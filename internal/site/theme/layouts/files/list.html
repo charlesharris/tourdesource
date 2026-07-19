@@ -1,13 +1,16 @@
 {{ define "main" }}
+{{ $files := (where site.RegularPages "Section" "files").ByParam "path" }}
+{{ $paginator := .Paginate $files }}
 <div class="explorer">
   {{ partial "tree.html" . }}
   <section class="explorer-main">
     <h2>Explorer</h2>
     <p class="lede">Browse the repository. Pick a file from the tree, or scan the index below — every row links to its code and commentary.</p>
+    <p class="kicker mono">{{ len $files }} files · showing {{ len $paginator.Pages }} on page {{ $paginator.PageNumber }} of {{ $paginator.TotalPages }} · press ⌘K to jump to any file</p>
     <table class="table file-table">
       <thead><tr><th>File</th><th>Subsystem</th><th class="num">Lines</th><th class="num">Commits</th></tr></thead>
       <tbody>
-        {{ range (where site.RegularPages "Section" "files").ByParam "path" }}
+        {{ range $paginator.Pages }}
         <tr class="row-link" onclick="location.href='{{ .RelPermalink }}'">
           <td class="mono"><a href="{{ .RelPermalink }}">{{ .Params.path }}</a></td>
           <td>{{ .Params.subsystem }}</td>
@@ -17,6 +20,7 @@
         {{ end }}
       </tbody>
     </table>
+    {{ template "_internal/pagination.html" . }}
   </section>
 </div>
 {{ end }}

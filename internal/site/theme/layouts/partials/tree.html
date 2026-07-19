@@ -1,15 +1,39 @@
+{{/*
+  File tree rail.
+
+  Only the current file's own folder is rendered server-side. Emitting the whole
+  tree here costs files × pages — on a 1,371-file repo that was 29%+ of every
+  page and the bulk of the output (TDS-61). The full tree is hydrated on demand
+  by app.js from /index.json, which the command palette already fetches, so
+  browsing costs one shared cached request instead of a copy per page.
+
+  With JS off the rail still shows where you are and what sits beside you, and
+  the Explorer table remains the complete, paginated inventory.
+*/}}
 {{- $cur := .RelPermalink -}}
-{{ $files := where site.RegularPages "Section" "files" }}
-<nav class="tree mono" aria-label="Files">
-  <div class="tree-head">Files · churn</div>
-  {{ range $files.GroupByParam "folder" }}
-  <details open>
-    <summary>{{ .Key }}</summary>
+{{- $folder := .Params.folder -}}
+<nav class="tree mono" aria-label="Files" data-tree data-files-url="{{ "/files/" | relURL }}"{{ with $folder }} data-tree-folder="{{ . }}"{{ end }}>
+  <div class="tree-head">
+    <span>Files</span>
+    <button type="button" class="tree-toggle mono" data-tree-toggle hidden>All folders</button>
+  </div>
+
+  {{ with $folder }}
+  {{ $siblings := where (where site.RegularPages "Section" "files") "Params.folder" . }}
+  <details open data-tree-local>
+    <summary>{{ . }}</summary>
     <div class="tree-group">
-      {{ range .Pages.ByParam "path" }}
+      {{ range $siblings.ByParam "path" }}
       <a class="tree-file {{ if eq .RelPermalink $cur }}is-active{{ end }}" href="{{ .RelPermalink }}">{{ path.Base .Params.path }}</a>
       {{ end }}
     </div>
   </details>
   {{ end }}
+
+  {{/* Hydrated from index.json; empty until then. */}}
+  <div class="tree-all" data-tree-all hidden></div>
+
+  <noscript>
+    <a class="tree-file tree-all-link" href="{{ "/files/" | relURL }}">All files →</a>
+  </noscript>
 </nav>

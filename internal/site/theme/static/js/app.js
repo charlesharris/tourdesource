@@ -136,6 +136,89 @@
     window.addEventListener("hashchange", revealHash);
   }
 
+  /* File tree: hydrate the full folder list from the shared search index.
+     The rail ships only the current folder (TDS-61), so browsing elsewhere
+     reads /index.json — already fetched and cached for the palette. */
+  var tree = document.querySelector("[data-tree]");
+  if (tree) {
+    var toggle = tree.querySelector("[data-tree-toggle]");
+    var all = tree.querySelector("[data-tree-all]");
+    var local = tree.querySelector("[data-tree-local]");
+    var built = false;
+    if (toggle) toggle.hidden = false;
+
+    function makeAllFilesLink() {
+      var a = document.createElement("a");
+      a.className = "tree-file tree-all-link";
+      a.href = tree.getAttribute("data-files-url") || "../../files/";
+      a.textContent = "All files →";
+      return a;
+    }
+
+    function buildTree(docs) {
+      var folders = {}, order = [];
+      docs.forEach(function (d) {
+        if (d.type !== "File") return;
+        var i = d.title.lastIndexOf("/");
+        var folder = i > -1 ? d.title.slice(0, i) : ".";
+        var base = i > -1 ? d.title.slice(i + 1) : d.title;
+        if (!folders[folder]) { folders[folder] = []; order.push(folder); }
+        folders[folder].push({ name: base, url: d.url });
+      });
+      order.sort();
+      var here = tree.getAttribute("data-tree-folder");
+      var frag = document.createDocumentFragment();
+      order.forEach(function (folder) {
+        var det = document.createElement("details");
+        if (folder === here) det.open = true;
+        var sum = document.createElement("summary");
+        sum.textContent = folder;
+        det.appendChild(sum);
+        var group = document.createElement("div");
+        group.className = "tree-group";
+        folders[folder].forEach(function (f) {
+          var a = document.createElement("a");
+          a.className = "tree-file";
+          a.href = f.url;
+          a.textContent = f.name;
+          if (a.pathname === location.pathname) a.classList.add("is-active");
+          group.appendChild(a);
+        });
+        det.appendChild(group);
+        frag.appendChild(det);
+      });
+      all.appendChild(frag);
+    }
+
+    if (toggle) toggle.addEventListener("click", function () {
+      if (built) {
+        var show = all.hidden;
+        all.hidden = !show;
+        if (local) local.hidden = show;
+        toggle.textContent = show ? "This folder" : "All folders";
+        return;
+      }
+      toggle.disabled = true;
+      toggle.textContent = "Loading…";
+      ensureIndex().then(function (docs) {
+        // ensureIndex resolves to [] rather than rejecting — notably when the
+        // site is opened over file://, where fetch is blocked. The Explorer
+        // page carries the same inventory as real HTML, so send them there
+        // instead of leaving an empty rail.
+        if (!docs || !docs.length) {
+          toggle.replaceWith(makeAllFilesLink());
+          return;
+        }
+        buildTree(docs);
+        built = true;
+        all.hidden = false;
+        if (local) local.hidden = true;
+        toggle.disabled = false;
+        toggle.textContent = "This folder";
+      });
+    });
+  }
+
   /* Symbols: live text filter */
   var sf = document.querySelector("[data-sym-filter]");
   if (sf) {

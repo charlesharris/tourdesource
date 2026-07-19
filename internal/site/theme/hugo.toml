@@ -14,6 +14,12 @@ uglyURLs = false
 
 disableKinds = ["taxonomy", "term", "RSS", "sitemap"]
 
+# The Explorer table is paginated so a large repo does not ship its whole
+# inventory in one page (TDS-61). The ⌘K palette stays the primary find-a-file
+# affordance and reads the static /index.json.
+[pagination]
+  pagerSize = 100
+
 # Home also emits a JSON search index consumed by the command palette (⌘K).
 [outputs]
   home = ["HTML", "JSON"]

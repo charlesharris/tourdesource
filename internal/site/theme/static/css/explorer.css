@@ -127,7 +127,14 @@ html, body { height: 100%; }
 .filepage { grid-template-columns: 264px 1fr 348px; }
 
 .tree { border-right: 1px solid var(--color-divider); overflow-y: auto; padding: var(--space-3) var(--space-2); font-size: 13px; }
-.tree-head { font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--color-neutral-500); padding: 4px 8px 10px; }
+.tree-head { font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--color-neutral-500);
+  padding: 4px 8px 10px; display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.tree-toggle { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+  background: none; border: 0; padding: 0; color: var(--color-accent-700); text-decoration: underline;
+  text-underline-offset: 2px; }
+.tree-toggle:hover { color: var(--color-accent-800); }
+.tree-toggle[disabled] { color: var(--color-neutral-500); cursor: default; text-decoration: none; }
+.tree-all-link { color: var(--color-accent-700); }
 .tree details > summary { padding: 5px 8px; border-radius: var(--radius-sm); color: var(--color-neutral-800); }
 .tree details > summary::before { content: "▸ "; color: var(--color-neutral-500); }
 .tree details[open] > summary::before { content: "▾ "; }
@@ -231,6 +238,18 @@ html, body { height: 100%; }
 .tour-stop-detour + .tour-stop-detour { border-top: 1px solid var(--color-divider); }
 .tour-outline-detour { padding-left: var(--space-5); font-size: 12px; color: var(--color-neutral-600); }
 .tour-outline-detour::before { content: "↳ "; color: var(--color-neutral-400); }
+
+/* Hugo's _internal/pagination.html markup, styled on Classical tokens. */
+.pagination { display: flex; flex-wrap: wrap; gap: var(--space-1); list-style: none;
+  margin: var(--space-6) 0 var(--space-8); padding: 0; justify-content: center; }
+.pagination .page-item { display: block; }
+.pagination .page-link { display: block; padding: 6px 11px; font-family: var(--font-mono); font-size: 12px;
+  color: var(--color-neutral-700); text-decoration: none; border: 1px solid var(--color-neutral-300);
+  border-radius: var(--radius-sm); }
+.pagination .page-link:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+.pagination .page-item.active .page-link { color: var(--color-accent-800); border-color: var(--color-accent);
+  background: var(--color-accent-100); }
+.pagination .page-item.disabled .page-link { color: var(--color-neutral-400); border-color: var(--color-neutral-200); }
 
 /* ── Symbols ────────────────────────────────────────────────────────────── */
 .page-symbols .table { width: 100%; }
