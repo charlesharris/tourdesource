@@ -19,12 +19,31 @@
   </div>
 
   {{ with $folder }}
-  {{ $siblings := where (where site.RegularPages "Section" "files") "Params.folder" . }}
+  {{ $siblings := (where (where site.RegularPages "Section" "files") "Params.folder" .).ByParam "path" }}
+  {{ $n := len $siblings }}
+  {{/* Even one folder can be large — Redmine's db/migrate holds 323 files, and
+       rendering all of them into each of its 323 pages costs more than the rest
+       of the rail put together. Show a window around the current file so "you
+       are here" survives, and leave the rest to the hydrated tree. */}}
+  {{ $cap := 25 }}
+  {{ $shown := $siblings }}
+  {{ $hidden := 0 }}
+  {{ if gt $n $cap }}
+    {{ $i := 0 }}
+    {{ range $k, $p := $siblings }}{{ if eq $p.RelPermalink $cur }}{{ $i = $k }}{{ end }}{{ end }}
+    {{ $start := cond (gt $i 12) (sub $i 12) 0 }}
+    {{ if gt (add $start $cap) $n }}{{ $start = sub $n $cap }}{{ end }}
+    {{ $shown = first $cap (after $start $siblings) }}
+    {{ $hidden = sub $n $cap }}
+  {{ end }}
   <details open data-tree-local>
-    <summary>{{ . }}</summary>
+    <summary>{{ . }}{{ if gt $n $cap }} <span class="tree-count">{{ $n }}</span>{{ end }}</summary>
     <div class="tree-group">
-      {{ range $siblings.ByParam "path" }}
+      {{ range $shown }}
       <a class="tree-file {{ if eq .RelPermalink $cur }}is-active{{ end }}" href="{{ .RelPermalink }}">{{ path.Base .Params.path }}</a>
+      {{ end }}
+      {{ if gt $hidden 0 }}
+      <p class="tree-more">+{{ $hidden }} more in this folder</p>
       {{ end }}
     </div>
   </details>

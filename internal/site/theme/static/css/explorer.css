@@ -135,6 +135,8 @@ html, body { height: 100%; }
 .tree-toggle:hover { color: var(--color-accent-800); }
 .tree-toggle[disabled] { color: var(--color-neutral-500); cursor: default; text-decoration: none; }
 .tree-all-link { color: var(--color-accent-700); }
+.tree-count { color: var(--color-neutral-500); font-size: 11px; }
+.tree-more { color: var(--color-neutral-500); font-size: 11px; padding: 5px 8px; margin: 0; }
 .tree details > summary { padding: 5px 8px; border-radius: var(--radius-sm); color: var(--color-neutral-800); }
 .tree details > summary::before { content: "▸ "; color: var(--color-neutral-500); }
 .tree details[open] > summary::before { content: "▾ "; }
