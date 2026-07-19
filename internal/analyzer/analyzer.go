@@ -36,6 +36,9 @@ type Options struct {
 	// name, sourced from tds.toml (TDS-27).
 	Config map[string]json.RawMessage
 
+	// NoCache forces every analyzer to re-run, ignoring the findings cache.
+	NoCache bool
+
 	// Timeout bounds each provider request. Analysis is far slower than
 	// structure extraction — brakeman alone walks the whole application — so
 	// this defaults to DefaultTimeout rather than the provider package's much
@@ -77,6 +80,8 @@ type Result struct {
 	Findings   int
 	Resolved   int // findings attributed to a symbol
 	Unresolved int // findings that landed outside any known symbol
+	// CacheHits counts (analyzer, file) pairs served without running a tool.
+	CacheHits int
 }
 
 // Run executes the analyze pipeline against an existing map and returns a
@@ -150,6 +155,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		runs      []AnalyzerRun
 		providers []string
 		attempted []string
+		cacheHits int
 	)
 
 	for _, p := range host.Providers() {
@@ -162,24 +168,55 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		}
 		attempted = append(attempted, p.Spec.Name)
 
-		res, err := p.Analyze(ctx, protocol.AnalyzeParams{
-			Root:      root,
-			Commit:    commit,
-			Files:     batch,
-			Analyzers: opts.Analyzers,
-			Config:    opts.Config[p.Spec.Name],
-		})
-		if err != nil {
-			warnf("provider %q analyze failed: %v", p.Spec.Name, err)
-			continue
-		}
-		for _, ae := range res.AnalyzerErrors {
-			warnf("provider %q analyzer %q: %s", p.Spec.Name, ae.Analyzer, ae.Message)
+		// Analyzers are grouped by the file set they still need, so identical
+		// work shares one call: with nothing changed the incremental analyzers
+		// have empty sets and are not called at all, while the whole-program
+		// ones share a single call over everything — which is exactly the
+		// shape of the request before caching existed.
+		hashes := hashFiles(root, batch)
+		plans := planAnalyzers(st, p, batch, hashes, opts.Analyzers, opts.NoCache)
+		ok := false
+
+		// This provider's own findings, so the per-analyzer tally is not
+		// polluted by another provider that reports the same tool name.
+		var mine []protocol.Finding
+		for _, pl := range plans {
+			cacheHits += pl.hits
+			mine = append(mine, pl.cached...)
+			if pl.hits > 0 {
+				ok = true
+			}
 		}
 
-		providers = append(providers, p.Spec.Name)
-		findings = append(findings, res.Findings...)
-		runs = append(runs, analyzerRuns(p, res.Findings, opts.Analyzers)...)
+		for _, grp := range groupByStale(plans) {
+			res, err := p.Analyze(ctx, protocol.AnalyzeParams{
+				Root:      root,
+				Commit:    commit,
+				Files:     grp.stale,
+				Analyzers: grp.names(),
+				Config:    opts.Config[p.Spec.Name],
+			})
+			if err != nil {
+				warnf("provider %q analyze failed: %v", p.Spec.Name, err)
+				continue
+			}
+			for _, ae := range res.AnalyzerErrors {
+				warnf("provider %q analyzer %q: %s", p.Spec.Name, ae.Analyzer, ae.Message)
+			}
+			for _, pl := range grp.plans {
+				recordCache(st, pl, res.Findings, hashes, warnf)
+			}
+			mine = append(mine, res.Findings...)
+			ok = true
+		}
+
+		findings = append(findings, mine...)
+		if ok {
+			runs = append(runs, analyzerRuns(p, mine, opts.Analyzers)...)
+		}
+		if ok {
+			providers = append(providers, p.Spec.Name)
+		}
 	}
 
 	// Attribute each finding to the innermost symbol containing it, unless the
@@ -224,6 +261,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		Findings:   len(findings),
 		Resolved:   resolved,
 		Unresolved: len(findings) - resolved,
+		CacheHits:  cacheHits,
 	}, nil
 }
 

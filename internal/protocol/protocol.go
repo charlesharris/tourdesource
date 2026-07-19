@@ -21,7 +21,10 @@ import (
 )
 
 // Version is the protocol version this build of the core speaks (semver).
-const Version = "1.0.0"
+// Version 1.1.0 added AnalyzerInfo.Incremental. The field is additive and
+// defaults to false, so a 1.0.0 provider keeps working — it simply never gets
+// its findings cached.
+const Version = "1.1.0"
 
 // SupportedMajors lists protocol major versions the core can talk. A provider is
 // compatible if its advertised protocol's major is in this set.

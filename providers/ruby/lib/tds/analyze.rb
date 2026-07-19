@@ -32,7 +32,8 @@ module TDS
           "name" => a.name,
           "tool" => a.tool,
           "available" => a.available?(root),
-          "views" => a.views
+          "views" => a.views,
+          "incremental" => a.incremental?
         }
         if info["available"] && (v = a.tool_version(root))
           info["tool_version"] = v
@@ -85,6 +86,11 @@ module TDS
     class Base
       # Views this analyzer's findings render in (design §8).
       def views = []
+
+      # Whether this analyzer's findings for a file depend only on that file, so
+      # the core may cache them per file (TDS-26). False by default: that is the
+      # answer that can only cost time, never correctness.
+      def incremental? = false
 
       def name = raise(NotImplementedError)
       def tool = name
@@ -241,12 +247,21 @@ module TDS
       FILES_PER_RUN = 250
 
       # "  116.4: TimeEntry#validate_time_entry    app/models/time_entry.rb:164-193"
-      # The location is optional: flog buckets code outside any method under
-      # "Class#none" with no file, and prints two header lines with no path.
-      LINE = /\A\s*([\d.]+):\s+(\S+)(?:\s+(.+?):(\d+)(?:-(\d+))?)?\s*\z/.freeze
+      #
+      # The symbol is NOT \S+. Minitest generates method names containing
+      # spaces — "GanttsControllerTest::test#renders chart with selected start
+      # month and year" is a real one from Redmine — so a greedy first token
+      # steals part of the name and the rest lands in the path. The location is
+      # anchored at the end instead, and the symbol is whatever precedes it.
+      #
+      # The location is also optional: flog buckets code outside any method
+      # under "Class#none" with no file, and prints two header lines with no
+      # path at all.
+      LINE = /\A\s*([\d.]+):\s+(.+?)(?:\s+(\S+):(\d+)(?:-(\d+))?)?\s*\z/.freeze
 
       def name = "flog"
       def views = %w[heatmap badge]
+      def incremental? = true
 
       def run(root:, files:)
         ruby = files.select { |f| f.end_with?(".rb", ".rake") }
@@ -449,6 +464,7 @@ module TDS
 
       def name = "rubocop"
       def views = ["annotations"]
+      def incremental? = true
 
       def run(root:, files:)
         ruby = files.select { |f| f.end_with?(".rb", ".rake", ".gemspec") }

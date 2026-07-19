@@ -314,6 +314,19 @@ class AnalyzeTest < Minitest::Test
   end
 
   # A single-line method has no range: "a.rb:12" rather than "a.rb:12-14".
+  # Minitest names methods after the block's description, spaces and all. A
+  # symbol pattern of \S+ silently moved the tail of the name into the path.
+  def test_flog_handles_method_names_containing_spaces
+    line = "    54.0: GanttsControllerTest::test#renders chart with selected start month and year " \
+           "test/functional/gantts_controller_test.rb:278-329\n"
+    f = FakeFlog.new(line).run(root: "/repo", files: ["test/functional/gantts_controller_test.rb"]).first
+
+    assert_equal "test/functional/gantts_controller_test.rb", f["path"]
+    assert_equal 278, f["start_line"]
+    assert_equal 329, f["end_line"]
+    assert_equal "GanttsControllerTest::test#renders chart with selected start month and year", f["symbol"]
+  end
+
   def test_flog_handles_single_line_locations
     f = findings_for("  30.0: A#b   a.rb:12\n").first
     assert_equal 12, f["start_line"]

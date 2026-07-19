@@ -12,7 +12,7 @@ module TDS
   # one response object per line out. stderr is reserved for logs.
   # See docs/protocol.md.
   class Provider
-    PROTOCOL = "1.0.0"
+    PROTOCOL = "1.1.0"
     VERSION  = "0.1.0"
 
     # run reads requests until stdin closes, answering each on stdout.

@@ -14,6 +14,7 @@ func newAnalyzeCmd() *cobra.Command {
 	var mapDir string
 	var analyzers []string
 	var timeout time.Duration
+	var noCache bool
 	cmd := &cobra.Command{
 		Use:   "analyze [path]",
 		Short: "Run language tooling into normalized findings",
@@ -38,6 +39,7 @@ unavailable and skipped, never a hard failure.`,
 				MapDir:    mapDir,
 				Analyzers: analyzers,
 				Timeout:   timeout,
+				NoCache:   noCache,
 				Warnf: func(format string, a ...any) {
 					fmt.Fprintf(cmd.ErrOrStderr(), "warning: "+format+"\n", a...)
 				},
@@ -52,6 +54,8 @@ unavailable and skipped, never a hard failure.`,
 	cmd.Flags().StringVar(&mapDir, "map-dir", "", "directory holding map.sqlite (default <repo>/.tds)")
 	cmd.Flags().StringSliceVar(&analyzers, "analyzer", nil,
 		"restrict to these analyzers by name (repeatable; default: everything available)")
+	cmd.Flags().BoolVar(&noCache, "no-cache", false,
+		"re-run every analyzer, ignoring cached findings for unchanged files")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0,
 		"per-provider budget for the analyze request (default 15m)")
 	return cmd
@@ -104,6 +108,9 @@ func printAnalyzeSummary(cmd *cobra.Command, res *analyzer.Result) {
 		fmt.Fprintf(out, ", %d outside any known symbol", res.Unresolved)
 	}
 	fmt.Fprintf(out, ")\n")
+	if res.CacheHits > 0 {
+		fmt.Fprintf(out, "  cache:       %d file(s) unchanged, served without re-running a tool\n", res.CacheHits)
+	}
 	fmt.Fprintf(out, "  wrote:       %s\n", res.SQLitePath)
 
 	if res.Findings > 0 {

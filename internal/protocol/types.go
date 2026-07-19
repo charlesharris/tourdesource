@@ -29,6 +29,14 @@ type AnalyzerInfo struct {
 	Available   bool     `json:"available"`
 	ToolVersion string   `json:"tool_version,omitempty"`
 	Views       []string `json:"views"`
+	// Incremental declares that this analyzer's findings for a file depend only
+	// on that file, so unchanged files can be served from cache (TDS-26).
+	//
+	// It is false by default, which is the safe answer. Whole-program analyzers
+	// must leave it false: brakeman's verdict on a controller can change because
+	// a model changed, and sorbet's because anything in the type graph did.
+	// Caching those per file would serve a stale answer that looks current.
+	Incremental bool `json:"incremental,omitempty"`
 }
 
 // --- structure ---

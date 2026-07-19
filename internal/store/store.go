@@ -125,6 +125,18 @@ CREATE TABLE IF NOT EXISTS findings (
 	view         TEXT,
 	value        REAL
 );
+-- The findings cache (TDS-26). One row per (analyzer, tool version, file
+-- content), holding that file's findings as JSON. Keyed by content hash rather
+-- than by commit because analyzers run against the working tree, which can
+-- differ from the commit the map was built at.
+CREATE TABLE IF NOT EXISTS finding_cache (
+	tool         TEXT NOT NULL,
+	tool_version TEXT NOT NULL,
+	path         TEXT NOT NULL,
+	hash         TEXT NOT NULL,
+	findings     TEXT NOT NULL,
+	PRIMARY KEY (tool, tool_version, path)
+);
 `
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
@@ -508,4 +520,47 @@ func (s *Store) allMeta() (map[string]string, error) {
 		out[k] = v
 	}
 	return out, rows.Err()
+}
+
+// CachedFindings returns the cached findings for a file, and whether the cache
+// holds an entry matching this exact content hash.
+//
+// A hit with no findings is still a hit: a clean file must not be re-analyzed
+// forever just because it had nothing to report.
+func (s *Store) CachedFindings(tool, toolVersion, path, hash string) ([]protocol.Finding, bool) {
+	var payload string
+	err := s.db.QueryRow(
+		`SELECT findings FROM finding_cache WHERE tool = ? AND tool_version = ? AND path = ? AND hash = ?`,
+		tool, toolVersion, path, hash).Scan(&payload)
+	if err != nil {
+		return nil, false
+	}
+	var out []protocol.Finding
+	if err := json.Unmarshal([]byte(payload), &out); err != nil {
+		return nil, false
+	}
+	return out, true
+}
+
+// PutCachedFindings records one file's findings for an analyzer, replacing any
+// previous entry for that (tool, version, path).
+func (s *Store) PutCachedFindings(tool, toolVersion, path, hash string, findings []protocol.Finding) error {
+	if findings == nil {
+		findings = []protocol.Finding{}
+	}
+	payload, err := json.Marshal(findings)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(
+		`INSERT INTO finding_cache (tool, tool_version, path, hash, findings) VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(tool, tool_version, path) DO UPDATE SET hash = excluded.hash, findings = excluded.findings`,
+		tool, toolVersion, path, hash, string(payload))
+	return err
+}
+
+// ClearFindingCache drops every cached entry, for `--no-cache`.
+func (s *Store) ClearFindingCache() error {
+	_, err := s.db.Exec(`DELETE FROM finding_cache`)
+	return err
 }

@@ -71,7 +71,7 @@ class StructureTest < Minitest::Test
   def test_capabilities
     caps = TDS::Provider.new.capabilities
 
-    assert_equal "1.0.0", caps["protocol"]
+    assert_equal "1.1.0", caps["protocol"]
     assert_equal "tds-provider-ruby", caps["provider"]
     assert_includes caps["languages"], "ruby"
     assert_includes caps["operations"], "structure"
