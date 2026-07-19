@@ -214,6 +214,28 @@ rendered from Hugo templates.
 **Languages:** Ruby/Rails today (via a prism-based provider); JavaScript/React
 next. A tree-sitter fallback covers other languages with line-range anchors.
 
+### Per-repo config (`tds.toml`)
+
+Optional. A `tds.toml` in the repository root tunes a run without any flags;
+absent, everything uses sensible defaults. Every field is optional.
+
+```toml
+[analyze]
+enable  = ["rubocop", "brakeman"]   # allowlist; omit to run all available
+disable = ["flog"]                  # run everything except these
+
+# Opaque settings handed to a provider verbatim (whatever it documents).
+[analyze.config.ruby]
+min_confidence = 2
+
+# Point a provider at a specific executable (e.g. the repo's own bundle).
+[[providers]]
+name    = "ruby"
+command = ["bundle", "exec", "tds-provider-ruby"]
+```
+
+`tds analyze --analyzer` / `--disable` override the file for a single run.
+
 ## Status
 
 Early, but the core loop works end to end: **`tds map` → `tds draft` → curate →

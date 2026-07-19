@@ -18,6 +18,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/charlesharris/tourdesource/internal/config"
 	"github.com/charlesharris/tourdesource/internal/protocol"
 	"github.com/charlesharris/tourdesource/internal/provider"
 	"github.com/charlesharris/tourdesource/internal/store"
@@ -30,8 +31,12 @@ type Options struct {
 	Commit string // expected commit; default is whatever the map was built at
 
 	// Analyzers optionally restricts which analyzers run, by name. Empty runs
-	// everything each provider offers.
+	// everything each provider offers. A non-empty list here (from `--analyzer`)
+	// wins over tds.toml's [analyze].enable.
 	Analyzers []string
+	// Disable removes analyzers by name, applied after the allowlist. From
+	// tds.toml's [analyze].disable — "run everything except this."
+	Disable []string
 	// Config is opaque, provider-interpreted configuration keyed by provider
 	// name, sourced from tds.toml (TDS-27).
 	Config map[string]json.RawMessage
@@ -98,6 +103,25 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// tds.toml narrows what runs. An explicit --analyzer (opts.Analyzers) wins
+	// over [analyze].enable; disable and per-provider config come from the file.
+	cfg, err := config.Load(root)
+	if err != nil {
+		return nil, err
+	}
+	if len(opts.Analyzers) == 0 {
+		opts.Analyzers = cfg.Analyze.Enable
+	}
+	// Disable is a denylist, so the flag adds to the file rather than replacing
+	// it: --disable is "also skip this," not "skip only this."
+	opts.Disable = append(append([]string{}, opts.Disable...), cfg.Analyze.Disable...)
+	if opts.Config == nil {
+		if opts.Config, err = cfg.ProviderConfigJSON(); err != nil {
+			return nil, err
+		}
+	}
+
 	mapDir := opts.MapDir
 	if mapDir == "" {
 		mapDir = filepath.Join(root, ".tds")
@@ -174,7 +198,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		// ones share a single call over everything — which is exactly the
 		// shape of the request before caching existed.
 		hashes := hashFiles(root, batch)
-		plans := planAnalyzers(st, p, batch, hashes, opts.Analyzers, opts.NoCache)
+		plans := planAnalyzers(st, p, batch, hashes, opts.Analyzers, opts.Disable, opts.NoCache)
 		ok := false
 
 		// This provider's own findings, so the per-analyzer tally is not
@@ -212,7 +236,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 
 		findings = append(findings, mine...)
 		if ok {
-			runs = append(runs, analyzerRuns(p, mine, opts.Analyzers)...)
+			runs = append(runs, analyzerRuns(p, mine, opts.Analyzers, opts.Disable)...)
 		}
 		if ok {
 			providers = append(providers, p.Spec.Name)
@@ -296,7 +320,7 @@ func filesFor(p *provider.Provider, host *provider.Host, files []store.File) []s
 // analyzerRuns pairs a provider's advertised analyzers with the findings they
 // produced. An analyzer whose tool isn't installed is still reported, with zero
 // findings, so the caller can tell "clean" from "never ran".
-func analyzerRuns(p *provider.Provider, findings []protocol.Finding, only []string) []AnalyzerRun {
+func analyzerRuns(p *provider.Provider, findings []protocol.Finding, only, deny []string) []AnalyzerRun {
 	requested := map[string]bool{}
 	for _, name := range only {
 		requested[name] = true
@@ -310,6 +334,11 @@ func analyzerRuns(p *provider.Provider, findings []protocol.Finding, only []stri
 	var runs []AnalyzerRun
 	for _, a := range p.Caps.Analyzers {
 		if len(requested) > 0 && !requested[a.Name] {
+			continue
+		}
+		// A disabled analyzer is off, not skipped: it should not appear in the
+		// summary at all.
+		if denied(a.Name, deny) {
 			continue
 		}
 		runs = append(runs, AnalyzerRun{

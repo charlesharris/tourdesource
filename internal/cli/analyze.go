@@ -12,7 +12,7 @@ import (
 
 func newAnalyzeCmd() *cobra.Command {
 	var mapDir string
-	var analyzers []string
+	var analyzers, disable []string
 	var timeout time.Duration
 	var noCache bool
 	cmd := &cobra.Command{
@@ -27,7 +27,10 @@ source the map indexed. Run ` + "`tds map`" + ` first; analyzing a repository wh
 is stale is refused rather than silently attributing findings to the wrong lines.
 
 Each analyzer is availability-gated: a tool that is not installed is reported as
-unavailable and skipped, never a hard failure.`,
+unavailable and skipped, never a hard failure.
+
+A tds.toml in the repository root can set [analyze].enable / [analyze].disable
+and per-provider [analyze.config.<provider>] blocks; the flags here override it.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root := "."
@@ -38,6 +41,7 @@ unavailable and skipped, never a hard failure.`,
 				Root:      root,
 				MapDir:    mapDir,
 				Analyzers: analyzers,
+				Disable:   disable,
 				Timeout:   timeout,
 				NoCache:   noCache,
 				Warnf: func(format string, a ...any) {
@@ -53,7 +57,9 @@ unavailable and skipped, never a hard failure.`,
 	}
 	cmd.Flags().StringVar(&mapDir, "map-dir", "", "directory holding map.sqlite (default <repo>/.tds)")
 	cmd.Flags().StringSliceVar(&analyzers, "analyzer", nil,
-		"restrict to these analyzers by name (repeatable; default: everything available)")
+		"restrict to these analyzers by name (repeatable; overrides tds.toml [analyze].enable)")
+	cmd.Flags().StringSliceVar(&disable, "disable", nil,
+		"skip these analyzers by name (repeatable; adds to tds.toml [analyze].disable)")
 	cmd.Flags().BoolVar(&noCache, "no-cache", false,
 		"re-run every analyzer, ignoring cached findings for unchanged files")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0,

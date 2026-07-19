@@ -60,11 +60,12 @@ func planAnalyzers(
 	files []string,
 	hashes map[string]string,
 	only []string,
+	deny []string,
 	noCache bool,
 ) []plan {
 	var out []plan
 	for _, a := range p.Caps.Analyzers {
-		if !a.Available || !wanted(a.Name, only) {
+		if !a.Available || !wanted(a.Name, only) || denied(a.Name, deny) {
 			continue
 		}
 		pl := plan{info: a}
@@ -138,6 +139,15 @@ func wanted(name string, only []string) bool {
 		return true
 	}
 	for _, n := range only {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+func denied(name string, deny []string) bool {
+	for _, n := range deny {
 		if n == name {
 			return true
 		}
