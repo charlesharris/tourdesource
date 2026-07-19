@@ -1,0 +1,156 @@
+# Ruby, and the Rails layout on top of it.
+#
+# Rails extends Ruby and outranks it, so a Rails app matches both at the same
+# root and priority decides. A plain gem keeps the Ruby lens.
+
+[lens.ruby]
+priority = 10
+detect.any = ["Gemfile", "*.gemspec", "Rakefile"]
+ignore = ["test/", "spec/", "vendor/", "doc/", "docs/"]
+
+[[lens.ruby.role]]
+path = "lib"
+column = "domain"
+name = "Library"
+
+[[lens.ruby.role]]
+path = "exe"
+column = "entry"
+name = "Executables"
+
+[[lens.ruby.role]]
+path = "bin"
+column = "entry"
+name = "Executables"
+
+# ── Rails ──────────────────────────────────────────────────────────────────
+# Roles migrated from the dirRoles table this replaces (TDS-74). lib/ stays in
+# the domain column it was moved to in TDS-70: Redmine's lib/redmine holds
+# access control, activity streams, field formats and the plugin hook system,
+# which is domain logic, not plumbing.
+
+[lens.rails]
+extends = "ruby"
+priority = 20
+detect.all = ["Gemfile", "config/routes.rb"]
+ignore = ["db/schema.rb", "db/structure.sql"]
+
+[[lens.rails.role]]
+path = "app/controllers"
+column = "entry"
+name = "Controllers"
+
+[[lens.rails.role]]
+path = "app/api"
+column = "entry"
+name = "API"
+
+[[lens.rails.role]]
+path = "config/routes"
+column = "entry"
+name = "Routing"
+
+[[lens.rails.role]]
+path = "app/models"
+column = "domain"
+name = "Domain models"
+
+[[lens.rails.role]]
+path = "app/validators"
+column = "domain"
+name = "Validators"
+
+[[lens.rails.role]]
+path = "app/services"
+column = "feature"
+name = "Services"
+
+[[lens.rails.role]]
+path = "app/queries"
+column = "feature"
+name = "Queries"
+
+[[lens.rails.role]]
+path = "app/operations"
+column = "feature"
+name = "Operations"
+
+[[lens.rails.role]]
+path = "app/interactors"
+column = "feature"
+name = "Interactors"
+
+[[lens.rails.role]]
+path = "app/policies"
+column = "feature"
+name = "Policies"
+
+[[lens.rails.role]]
+path = "app/forms"
+column = "feature"
+name = "Forms"
+
+[[lens.rails.role]]
+path = "app/presenters"
+column = "feature"
+name = "Presenters"
+
+[[lens.rails.role]]
+path = "app/serializers"
+column = "feature"
+name = "Serializers"
+
+[[lens.rails.role]]
+path = "app/decorators"
+column = "feature"
+name = "Decorators"
+
+[[lens.rails.role]]
+path = "app/jobs"
+column = "infra"
+name = "Background jobs"
+
+[[lens.rails.role]]
+path = "app/mailers"
+column = "infra"
+name = "Mailers"
+
+[[lens.rails.role]]
+path = "app/helpers"
+column = "infra"
+name = "View helpers"
+
+[[lens.rails.role]]
+path = "app/views"
+column = "infra"
+name = "Views"
+
+[[lens.rails.role]]
+path = "app/assets"
+column = "infra"
+name = "Assets"
+
+[[lens.rails.role]]
+path = "app/javascript"
+column = "infra"
+name = "Frontend"
+
+[[lens.rails.role]]
+path = "config"
+column = "infra"
+name = "Configuration"
+
+[[lens.rails.role]]
+path = "db"
+column = "infra"
+name = "Database"
+
+[[lens.rails.role]]
+path = "public"
+column = "infra"
+name = "Static assets"
+
+[[lens.rails.role]]
+path = "extra"
+column = "infra"
+name = "Extras"

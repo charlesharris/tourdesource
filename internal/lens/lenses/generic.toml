@@ -1,0 +1,88 @@
+# The floor every other lens degrades to (TDS-67).
+#
+# It has no `detect`, so it never activates by marker — the caller falls back to
+# it when nothing else resolved. Grouping is by directory, descending one level
+# into container directories so `internal/` yields a node per package rather
+# than one blob.
+#
+# It claims only what is near-universal: cmd/, bin/ and a root main file are
+# entry points. Everything else lands in the unlabelled `modules` column,
+# because sorting a Go package into "Infrastructure" would be a guess wearing
+# the costume of an analysis.
+
+[lens.generic]
+ignore = [
+  "test/", "tests/", "spec/", "doc/", "docs/",
+  "vendor/", "node_modules/", "third_party/",
+]
+
+[[lens.generic.role]]
+path = "cmd"
+column = "entry"
+per-segment = true
+
+[[lens.generic.role]]
+path = "bin"
+column = "entry"
+name = "bin"
+
+# Container directories: one subsystem per child.
+[[lens.generic.role]]
+path = "internal"
+column = "modules"
+per-segment = true
+
+[[lens.generic.role]]
+path = "pkg"
+column = "modules"
+per-segment = true
+
+[[lens.generic.role]]
+path = "src"
+column = "modules"
+per-segment = true
+
+[[lens.generic.role]]
+path = "lib"
+column = "modules"
+per-segment = true
+
+[[lens.generic.role]]
+path = "libs"
+column = "modules"
+per-segment = true
+
+[[lens.generic.role]]
+path = "packages"
+column = "modules"
+per-segment = true
+
+[[lens.generic.role]]
+path = "apps"
+column = "modules"
+per-segment = true
+
+[[lens.generic.role]]
+path = "modules"
+column = "modules"
+per-segment = true
+
+[[lens.generic.role]]
+path = "services"
+column = "modules"
+per-segment = true
+
+[[lens.generic.role]]
+path = "components"
+column = "modules"
+per-segment = true
+
+[[lens.generic.role]]
+path = "crates"
+column = "modules"
+per-segment = true
+
+[[lens.generic.role]]
+path = "providers"
+column = "modules"
+per-segment = true
