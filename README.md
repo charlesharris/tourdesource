@@ -206,7 +206,7 @@ rendered from Hugo templates.
 | Stage | What it does | Status |
 |---|---|---|
 | `tds map` | Structural index: symbols, imports, Rails entrypoints, git signals → SQLite + JSON | ✅ working |
-| `tds analyze` | Run language tooling (linters, security, types, coverage) into normalized findings attributed to symbols | ✅ working (rubocop + brakeman; more in M3) |
+| `tds analyze` | Run language tooling (linters, security, types, coverage) into normalized findings attributed to symbols | ✅ working (rubocop, brakeman, flog, simplecov, sorbet) |
 | `tds draft` | Generate a curated-ready tour skeleton from the map, optionally narrated by an assistant (`--narrate`) | ✅ working |
 | `tds build` | Compile a tour into a multi-page static site (requires Hugo) | ✅ working |
 | `tds check` | Re-resolve anchors against HEAD and report drift | 🚧 planned |

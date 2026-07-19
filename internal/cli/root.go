@@ -24,7 +24,7 @@ The pipeline is a set of discrete stages:
   map      build the structural index of a repo (via language providers)
   analyze  run language tooling (linters, types, coverage) into findings
   draft    generate a tour draft with AI assistance (curated by a human)
-  build    compile a tour into a self-contained static bundle
+  build    compile a tour into a browsable static site (needs hugo)
   check    re-resolve a tour's anchors against HEAD and report drift
 
 See docs/design.md and docs/implementation-plan.md for the full picture.`,

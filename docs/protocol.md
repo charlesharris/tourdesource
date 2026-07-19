@@ -3,7 +3,7 @@
 The contract the `tds` core uses to drive language **providers** (Ruby, JS,
 tree-sitter fallback) as out-of-process programs. Canonical Go types live in
 `internal/protocol`; conformance fixtures in `internal/protocol/testdata`.
-See design.md §9. **Current version: `1.0.0`.**
+See design.md §9. **Current version: `1.1.0`.**
 
 ## Transport & framing
 
@@ -60,7 +60,7 @@ Result:
 
 ```json
 {
-  "protocol": "1.0.0",
+  "protocol": "1.1.0",
   "provider": "tds-provider-ruby",
   "provider_version": "0.1.0",
   "languages": ["ruby"],

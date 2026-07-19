@@ -11,7 +11,7 @@
 
 **tour-de-source** (`tds`) analyzes a source repository and produces a **shareable, interactive "tour"** of the project. A tour is guided narration anchored to real code — an author writes (with heavy AI assistance) an ordered walk through the codebase, and `tds` compiles it into a self-contained static site that a reader can follow on-rails *or* wander off of to browse the whole repo freely.
 
-The product's north star is that a tour is **shareable both as content and as an experience**: the source of a tour is diffable Markdown you can review in a PR; the output is a frozen artifact you can email, host anywhere, or publish as an artifact and hand to someone.
+The product's north star is that a tour is **shareable both as content and as an experience**: the source of a tour is diffable Markdown you can review in a PR; the output is a frozen artifact you can host anywhere, or serve locally and hand to someone.
 
 Target use cases, in eventual priority order: **onboarding, code review, demos, interviews.** **v1 is designed around onboarding / repo orientation**; the others are later authoring/rendering modes over the same core.
 
@@ -22,9 +22,9 @@ Target use cases, in eventual priority order: **onboarding, code review, demos, 
 ### Goals (v1)
 
 - Turn a repo into a high-quality **onboarding tour** with minimal human effort — AI drafts, human curates in ~20 minutes.
-- Produce a **self-contained static bundle** that is correct forever about its own snapshot and works with no server and no network.
+- Produce a **self-contained static site** that is correct forever about its own snapshot: it carries the repo's source at the pinned SHA and needs no network. (A simple static file server serves it; the ⌘K search and full file tree read a static index over `fetch`, which wants a server rather than `file://`.)
 - Anchors that survive normal code churn (**symbol-first**, line-range fallback).
-- A viewer that supports **guided narration + free browsing** of the whole repo.
+- A site that supports **guided narration + free browsing** of the whole repo.
 - A **pluggable analysis pipeline**: per-language **providers** (native programs behind a JSON protocol) run existing tools (linters, security scanners, type checkers, coverage/complexity) and surface each tool's output as a toggleable **view** layered over the tour.
 - Ship the core as a **single Go binary** that dispatches to language providers — deep analysis stays native to each language. `tds build` additionally requires **Hugo extended ≥ 0.128** on PATH: the site is rendered from Hugo templates, so Hugo is a build dependency of the core, not an optional extra.
 - A clean, inspectable **pipeline** where the analysis and build stages have no AI or network dependency (only drafting talks to Claude).
@@ -34,7 +34,7 @@ Target use cases, in eventual priority order: **onboarding, code review, demos, 
 
 - Deep semantic analysis (full call graphs, dataflow, type inference). We do lightweight, multi-language structural analysis only.
 - Live / auto-updating tours that track a moving branch. Tours are immutable, SHA-pinned artifacts by design.
-- A hosted service, accounts, or collaboration backend. Sharing is "hand someone a bundle."
+- A hosted service, accounts, or collaboration backend. Sharing is "host the site, or hand someone the folder."
 - An in-browser tour *editor*. Authoring is file-based (Markdown) in v1.
 - Language coverage beyond the v1 set with full symbol support (others degrade gracefully).
 
@@ -44,7 +44,7 @@ Target use cases, in eventual priority order: **onboarding, code review, demos, 
 
 - **Tour** — an ordered, mostly-linear walk through a repo, pinned to a single commit SHA. Has a title, intro, metadata, and a list of chapters.
 - **Chapter** — a named, ordered group of stops (e.g. "Follow one request end to end").
-- **Stop** — the atomic unit: prose + one or more **anchors** into code, with an optional **focus** (a highlighted sub-range within the anchored symbol). Stops are the things the viewer navigates between.
+- **Stop** — the atomic unit: prose + one or more **anchors** into code, with an optional **focus** (a highlighted sub-range within the anchored symbol). Stops are what the tour page steps between.
 - **Side-quest / detour** — an optional, collapsible branch hanging off a stop (e.g. a role-specific deep dive). Keeps the spine linear while allowing depth.
 - **Anchor** — a durable reference to a location in code. **Symbol-first** (`path/to/file.rb::Class#method`), resolved at build time by a language provider (native parser; tree-sitter fallback), with a **line-range fallback** (`path/to/file.rb:40-52`) where no provider resolves it.
 - **Repo map** — the deterministic structural index `tds` builds: symbols, imports/dependencies, file tree, and git signals. Grounds both anchor resolution and AI drafting.
@@ -52,15 +52,15 @@ Target use cases, in eventual priority order: **onboarding, code review, demos, 
 - **Provider** — an out-of-process program that, given `{repo, commit, files, config}`, returns **structure** (symbols/imports/entrypoints) and/or **findings** per a versioned JSON protocol. Native providers are best-in-class per language (a Ruby gem using prism + rubocop/brakeman; a Node package using the TS compiler + eslint/tsc). A built-in **tree-sitter fallback provider** (compiled into the core) covers everything else.
 - **Analyzer** — a single external tool (rubocop, brakeman, eslint, tsc, coverage, complexity…) that a provider runs to produce findings. Each analyzer maps to one or more **views**.
 - **Finding** — a normalized result from an analyzer: an anchor (file + line range, resolved to a symbol where possible), severity, rule/code, message, and optional URL.
-- **View** — a toggleable lens over the tour/repo derived from findings: inline **annotations**, a line/file **heatmap**, a browsable **panel**, or a per-symbol **badge**. Views render in the viewer and can be referenced from stops.
-- **Bundle** — the compiled static-site output: viewer + tour manifest + embedded repo-at-SHA + selected views.
+- **View** — a toggleable layer over the findings, derived from `tds analyze`: inline **annotations**, a file **heatmap**, a filterable **panel**, or a per-stop **badge**. Views render on the site's Findings tab and are referenced from stops.
+- **Site** — the compiled output: a multi-page static site (Hugo-rendered from an embedded theme) carrying the tour, a page per source file with its source at the pinned SHA, the architecture map, the symbol index, and the analyzer views. The only output format (the earlier single-file "bundle" was removed — decision 19a).
 - **Template** — an opinionated tour skeleton (v1: `onboarding`) that drafting fills in. First-class extension point for future modes (`review`, `demo`).
 
 ---
 
 ## 4. The tour format (source of truth)
 
-Tours are authored as **Markdown** (`*.tour.md`) with YAML frontmatter. Markdown is the source of truth because it is diffable, PR-reviewable, and *is itself* shareable content. The build compiles it to a JSON **manifest** the viewer consumes; the manifest is a build artifact, never hand-edited.
+Tours are authored as **Markdown** (`*.tour.md`) with YAML frontmatter. Markdown is the source of truth because it is diffable, PR-reviewable, and *is itself* shareable content. The build compiles it to the theme's JSON **data contract** the site is rendered from; that data is a build artifact, never hand-edited.
 
 ### 4.1 File shape
 
@@ -116,7 +116,7 @@ Stuck invoices are almost always here — the lock in `with_lock` below.
 | `::detour{title=…} … ::` | a collapsible side-quest; may contain stops |
 | frontmatter | tour metadata + template + commit pin |
 
-Findings from `tds analyze` attach to a stop automatically via its anchored symbol (rendered as a **badge**, §8) — no directive needed. A stop may *optionally* deep-link a view with `view="<id>"` (e.g. open the security panel filtered to this symbol) to tie narration to instrumentation.
+Findings from `tds analyze` attach to a stop automatically — no directive needed — by **line range**: a stop shows a span of code, and it surfaces what the analyzers flagged inside that span. (The original design attached them via the stop's anchored *symbol*, but analyzers attribute a finding to the innermost symbol containing it, so a stop anchored at a class matched none of the findings in its own methods; the range is the honest join. See TDS-35.) A stop may *optionally* deep-link a view with `view="<id>"` (e.g. open the security panel) to tie narration to instrumentation.
 
 ---
 
@@ -126,10 +126,10 @@ Staleness is the failure mode that kills tools like this, so it is a first-class
 
 ### 5.1 Two independent axes
 
-1. **Internal correctness** — is the tour true about the code it ships with? **Always yes, by construction.** The bundle embeds the repo *at the pinned SHA* and anchors are resolved against that exact snapshot at build time. A shared bundle can never lie about itself.
+1. **Internal correctness** — is the tour true about the code it ships with? **Always yes, by construction.** Every file page carries the repo's source *at the pinned SHA*, and anchors are resolved against that exact snapshot at build time. A shared site can never lie about itself.
 2. **Freshness** — how far has the live branch moved since the tour was cut? A *maintenance* concern for the author, never a correctness problem for the reader.
 
-Embedding the whole repo at a pinned SHA is therefore **load-bearing**, not a nicety: it's what makes bundles immutable and self-true.
+Embedding the whole repo at a pinned SHA is therefore **load-bearing**, not a nicety: it's what makes a shared site immutable and self-true.
 
 ### 5.2 Symbol-first durability
 
@@ -164,8 +164,8 @@ Discrete, inspectable stages. The **core** (one Go binary) orchestrates; `map` a
                         tds draft ◀── Claude via tmux ──▶ *.tour.md drafts
                                   │  (human curates the .tour.md)
                                   ▼
-   *.tour.md ─────────────▶ tds build ─▶ static bundle: viewer + manifest
-                                  ▲          + repo@SHA + selected views
+   *.tour.md ─────────────▶ tds build ─▶ static site (Hugo): tour + file pages
+                                  ▲          + repo@SHA + views  (needs hugo)
    checkout ─▶ tds check ─▶ drift report
 ```
 
@@ -195,9 +195,9 @@ Calls each language provider's `analyze` operation; providers run their **analyz
 - **Availability-gated.** A provider reports which of its analyzers' tools are installed (and their versions). A missing tool is skipped with a note, never an error.
 - **Failure-isolated.** A crashing or misconfigured analyzer — or an entire provider that fails to launch — degrades to "no findings from that source" and is reported; it never breaks the stage or the other analyzers.
 - **Cached per tool.** Findings are keyed by (tool, tool version, file hash) so re-runs only re-analyze changed files.
-- **SHA-pinned and attributed.** Findings record the tool + version and the commit, so every view is reproducible and its provenance is shown in the bundle.
+- **SHA-pinned and attributed.** Findings record the tool + version and the commit, so every view is reproducible and its provenance is shown on the site.
 
-Findings serve three consumers: **views** in the viewer (§8), **grounding** for `draft` (complexity hotspots, lint-heavy or security-flagged code are strong stop candidates), and the author's own read of the repo's health.
+Findings serve three consumers: **views** on the site (§8), **grounding** for `draft` (complexity hotspots, lint-heavy or security-flagged code are strong stop candidates), and the author's own read of the repo's health.
 
 ### 6.3 `tds draft` — AI-assisted drafting via tmux
 
@@ -220,19 +220,20 @@ Rationale for not using `claude -p`: the tmux route is more robust and observabl
 - **Pass 2 — narrate.** For each stop, hand Claude the actual source of the anchored symbol + neighbors; ask for tight prose. Small, parallelizable units → better writing.
 - **Validation gate.** Before writing any `.tour.md`, `tds` resolves every proposed anchor against the map. Non-resolving anchors are dropped or flagged. The emitted draft is **structurally guaranteed** to point at real code even where prose still needs editing.
 
-### 6.4 `tds build` — compile to a static bundle
+### 6.4 `tds build` — compile to a static site
 
-**No AI, no network.** Deterministic given (`*.tour.md`, repo@SHA).
+**No AI, no network.** Deterministic given (`*.tour.md`, repo@SHA). Requires **Hugo extended ≥ 0.128** on PATH (decision 19b).
 
 Steps:
-1. Resolve `commit: auto` to a concrete SHA; check out / read that snapshot.
+1. Resolve `commit: auto` to a concrete SHA; read that snapshot.
 2. Parse the `.tour.md`(s); resolve every anchor to concrete line ranges via the map.
-3. **Syntax-highlight at build time** (a Go highlighter compiled into the core, e.g. chroma — independent of the providers) → ship pre-rendered token HTML. No highlighter JS, works with JS disabled for reading, zero runtime highlight cost.
-4. Embed the **whole repo** so readers can wander anywhere. File blobs are **lazy-loaded**: a small manifest loads instantly; individual files fetch on demand.
-5. Embed **selected views** — findings from the store for the enabled analyzers, plus each view's render metadata (annotation/heatmap/panel/badge). Which views ship is configurable; default is all views with findings.
-6. Emit the bundle.
+3. Emit the theme's **data contract** — `data/{manifest,tour,symbols,views}.json` and one `content/files/<slug>.md` per source file, each carrying that file's source at the pinned SHA.
+4. Run Hugo over the embedded theme. **Syntax highlighting is Chroma at build time** (Hugo's `transform.Highlight`) → pre-rendered token HTML, no highlighter JS, zero runtime cost.
+5. **Views** — findings from the store become one view per (tool, kind), embedded as `data/views.json` and layered onto file pages (annotations), the Explorer (complexity shading), and tour stops (badges). All views with findings ship.
 
-**Output form:** a **multi-page static site** (`public/`) rendered by Hugo from the embedded theme — overview, architecture map, explorer, a page per source file, the tour, and a symbol index. `relativeURLs = true`, so it works served from any subpath or opened from `file://`. There is no single-file variant (decision 19a).
+**Output form:** a **multi-page static site** (written to `.tds/site`) — overview, architecture map, explorer, a page per source file, the tour, a symbol index, and (when analyzed) a findings tab. `relativeURLs = true`, so it serves from any subpath. Machine-generated files (minified bundles) and files over ~512KB get a page without a code block. There is no single-file variant (decision 19a).
+
+**Scale.** The site is many pages by design, so a large repo does not load as one document — the file tree is scoped per folder and hydrated on demand, and the Explorer paginates. Redmine (2,264 files) builds to ~1,371 file pages in ~15s.
 
 ### 6.5 `tds check` — drift report
 
@@ -260,31 +261,36 @@ When drafting fills this reliably and grounds each stop in real anchored symbols
 
 ---
 
-## 8. The viewer
+## 8. The site
 
-A static, dependency-light two-pane app.
+The output is a **multi-page static site**, rendered by Hugo from a theme embedded in the binary (`internal/site`). It is not a single app; it is a set of linked pages a browser walks, which is what lets it scale to a repository of thousands of files without loading them all at once.
 
-- **Left: narrative rail.** Chapters and stops as scrollable prose. Side-quests render as collapsible blocks.
-- **Right: code pane.** Shows the anchored file with the focus range highlighted.
+**The views (tabs):**
+- **Overview** — title, stat row, subsystems, directory distribution.
+- **Architecture** — subsystems in role columns, derived from the map (§9.6).
+- **Explorer** — a page per source file, plus a filterable inventory; complexity shades the file rows when analysis has run.
+- **Tour** — the guided narration: prose beside its highlighted code, chapters and stops, side-quests as nested collapsibles.
+- **Symbols** — a filterable index of every class, module and method.
+- **Findings** — the analyzer output (below), present only when `tds analyze` has run.
+- **⌘K palette** — searches files, symbols and tour stops together, over a static `index.json`.
 
-**Navigation:** **scrollytelling + keyboard stepping.** Scrolling the narrative drives the code pane to the active stop; `←/→` step stop-to-stop (first-class, so the demo/presenter use case isn't painted out). Reader-first (v1 = solo onboarding) but presenter-capable.
+**The tour page** is the reason the thing exists. Prose on the left, the anchored source on the right with the stop's range highlighted, chapter/stop outline for jump navigation, `J`/`K` to step between stops, and a deep-linkable fragment per stop. Side-quests are nested `<details>`, off the main path by construction. Free browsing is the Explorer and its per-file pages, not a mode toggle.
 
-**Signature feature — on-rails ⟷ free browse.** Because the whole repo is embedded, the code pane doubles as a **file browser**. A reader can click off into any file, read around, then hit **"return to tour"** to snap back to where they left the guided path. The dual mode is what makes this better than a doc full of code links.
+**Views — the analysis overlay.** Findings from `tds analyze` become toggleable **views**, one per (tool, kind), each carrying its **provenance** (tool + version + commit — a finding without it is an anonymous accusation). The kinds:
 
-**Views — the analysis overlay.** Findings from `tds analyze` render as toggleable **views** the reader can layer over any file, on-rails or while free-browsing. v1 ships the full set:
+- **Annotations** — a severity-marked gutter dot on each flagged code line, with the rule and message in reach. Attached client-side, because the code is highlighted server-side.
+- **Heatmap** — a measurement, not a defect list: a per-file table ranked by its worst value (complexity today), and the same value shading the Explorer's file rows.
+- **Panel** — a filterable table of findings (by file text, rule, and severity toggles); every row jumps to its line.
+- **Badge** — findings surfaced on the tour stop whose code they fall in, as a collapsed chip. (Attached by line range, per §7. `view.BySymbol` exists for a per-symbol badge but is not yet wired.)
 
-- **Annotations** — inline/gutter markers on code lines (e.g. rubocop offenses, brakeman warnings, tsc/sorbet type errors). Click for the rule, message, and link.
-- **Heatmap** — line/file shading for continuous signals (test coverage, complexity, churn). Turns "where's the risk?" into a glance.
-- **Panel** — a browsable, filterable table of findings for a view (by file, severity, rule); jump from a row to the code.
-- **Badge** — per-symbol summary chips shown on stops (e.g. "3 lint offenses · 62% covered · complexity 41"), so a stop carries its instrumentation inline.
+A **view switcher** on the Findings tab toggles views independently; multiple can be active. A stop may **reference a view** with `view="<id>"`, which renders a deep link that opens the switcher isolated to that view.
 
-A **view switcher** toggles views independently; multiple can be active. Each view shows its **provenance** (tool + version + commit). A stop may **reference a view** (e.g. deep-link into the security panel filtered to its symbol), tying narration to instrumentation.
-
-**Other viewer properties:**
-- Deep links to any stop or view state (shareable URL fragment).
-- Chapter/stop outline for jump navigation.
-- Pre-highlighted code (no runtime highlighter).
-- Degrades to readable static content with JS off (views are progressive enhancement).
+**Site properties:**
+- SHA-pinned: each file page carries its own source from the commit the map was built at, so the site cannot drift from the code it describes.
+- Relative URLs, so it serves from any subpath.
+- Pre-highlighted code (Chroma at build time, no runtime highlighter).
+- Reading degrades to static content with JS off; the ⌘K palette and the full file tree need JavaScript (they read `index.json` over `fetch`, which `file://` blocks — so the site is *served*, not opened as a file).
+- Hugo extended ≥ 0.128 is a build dependency (decision 19b). There is no single-file variant (decision 19a).
 
 ---
 
@@ -332,18 +338,18 @@ Each analyzer is independent; a repo lights up whatever tools it actually has. T
 
 ### 9.5 Views (data model)
 
-A **view** is `{ id, title, kind, provenance, findings }` where `kind ∈ {annotations, heatmap, panel, badge}`. Views are computed at `analyze` time, embedded at `build` time (§6.4 step 5), and rendered by the viewer (§8). Because findings are SHA-pinned and version-attributed, a view in a shared bundle is reproducible and self-describing — consistent with the immutable-artifact model (§5).
+A **view** is `{ id, title, kind, provenance, findings }` where `kind ∈ {annotations, heatmap, panel, badge}`. Views are computed at `analyze` time, embedded at `build` time (§6.4 step 5), and rendered on the site's Findings tab (§8). Because findings are SHA-pinned and version-attributed, a view in a shared site is reproducible and self-describing — consistent with the immutable-artifact model (§5).
 
 ---
 
 ## 10. Technology choices
 
-- **Core:** Go — single **CGO-free** static binary, cross-compiles trivially (validated in spike TDS-4), embeds the viewer assets (`go:embed`); best distribution story for a shareable CLI. Owns dispatch, store, draft/tmux, build, bundle, tour format, anchor resolution.
+- **Core:** Go — single **CGO-free** static binary, cross-compiles trivially (validated in spike TDS-4), embeds the Hugo theme (`go:embed`); best distribution story for a shareable CLI. Owns dispatch, store, draft/tmux, site generation, tour format, anchor resolution. (`tds build` shells out to Hugo — the one external tool.)
 - **Providers:** separate programs behind the JSON protocol (§9). v1 native providers — **Ruby** (gem: prism + rubocop/brakeman/sorbet/simplecov/flog) and **JS/React** (npm: TS compiler + react-docgen + eslint/tsc/coverage). Discovered on `PATH` / via `tds.toml`.
 - **Fallback parsing:** tree-sitter (Go bindings, **CGO**) lives in the **separate fallback-provider binary**, built per-OS — kept out of the core so the core stays CGO-free (spike TDS-4).
 - **Store:** SQLite via the pure-Go `modernc.org/sqlite` driver (keeps the core CGO-free), with JSON export. Holds symbols, imports, git signals, and analyzer findings.
 - **AI transport:** `tmux` driving `claude --dangerously-skip-permissions`, file-mediated I/O.
-- **Viewer:** vanilla JS + minimal CSS, no framework, no CDN — everything inlined/self-contained so bundles are portable and CSP-safe.
+- **Site:** a Hugo theme embedded in the binary — Go templates, Classical design tokens, and vanilla `app.js` (no framework, no CDN). Rendered to a directory of static pages; the ⌘K palette and file-tree hydration read a static `index.json`.
 - **Build-time highlighting:** a Go highlighter (e.g. chroma) compiled into the core, independent of the providers.
 
 ---
@@ -355,11 +361,11 @@ A **view** is `{ id, title, kind, provenance, findings }` where `kind ∈ {annot
 | 1 | v1 = onboarding | Shapes defaults; hardest and most valuable | PR/demo/interview → later modes |
 | 2 | Draft-then-edit authoring | AI speed + human judgment; curation ~20 min | Fully auto (quality caps); hand-only (slow) |
 | 3 | Symbol-first anchors + line fallback | Survives churn; only rename/delete breaks | Line-only (rots fast) |
-| 4 | Embed whole repo @ pinned SHA | Immutable, self-true bundles; free-browse | Windows-only (on-rails only) |
-| 5 | Static bundle output | Shareable as artifact; no server/network | Serve-only (needs hosting) |
+| 4 | Embed whole repo @ pinned SHA | Immutable, self-true sites; free-browse | Windows-only (on-rails only) |
+| 5 | Static site output (Hugo, TDS-62) | Shareable, hostable anywhere; no runtime | Single-file bundle (a second UI to maintain) |
 | 6 | Markdown source → JSON manifest | Diffable, PR-reviewable, *is* content | Tool-owned JSON (bad to hand-edit) |
 | 7 | Linear spine + collapsible side-quests | Fits real onboarding without a maze | Strict linear (too flat); graph (confusing) |
-| 8 | Scrollytelling + keyboard stepping | Reader-first, presenter-capable | Scroll-only / step-only |
+| 8 | Tab-per-view site + J/K stop stepping | Scales to thousands of files; reader- and presenter-capable | Single scrollytelling app (loads whole repo at once) |
 | 9 | tmux + `--dangerously-skip-permissions`, file-mediated | Stays on subscription; observable; robust | `claude -p` (billing ambiguity, no observability) |
 | 10 | Two-pass draft + hard anchor validation | Anti-hallucination; guaranteed-real anchors | Single-pass (more drift) |
 | 11 | SQLite + JSON export | Queryable; substrate for future `serve` | JSON-only (weaker at scale) |
@@ -385,20 +391,20 @@ A **view** is `{ id, title, kind, provenance, findings }` where `kind ∈ {annot
 - **Provider protocol design** — getting the `capabilities`/`structure`/`analyze` contract, version negotiation, and error/partial-result semantics right up front; it's the seam everything else hangs on. *Prototype the Ruby provider against a real Rails app early.*
 - **Provider distribution & runtimes** — native providers need Ruby / Node present; the Go core spawns them as subprocesses. Fine for Rails+React repos (both already installed), but the install story (gem + npm package + binary) needs to be smooth, with clear messaging when a provider is missing (falls back to tree-sitter).
 - **Cross-language build** — *Resolved by spike TDS-4.* tree-sitter requires CGO, so it is split into a separate fallback-provider binary (built per-OS); the core uses pure-Go `modernc.org/sqlite` and stays CGO-free and cross-compilable. Remaining work is packaging the per-OS fallback-provider binaries alongside the core.
-- **Bundle size on large repos** — whole-repo embed + lazy-load should hold, but needs a real measurement on a big repo; may need blob compression / on-demand fetch tuning.
+- **Site size on large repos** — every file page carries its own source, so a big repo runs to tens of MB (Redmine: ~76MB). Held on Redmine after scoping the file tree, paginating the Explorer, and dropping code from minified/oversized files; a still-larger repo may want further trimming.
 - **Draft quality variance** — how good is the two-pass draft *actually*? The template mitigates but doesn't guarantee. *Dogfood on a real Rails repo first.*
 - **Focus-range highlighting inside a symbol** — substring vs. sub-line-range resolution rules TBD.
 - **Multiple tours per repo** — naming, discovery, an index page. Likely fine but unspecified in v1.
 - **Analyzer noise & config** — type checkers and linters can be loud or need repo-specific config (rubocop/eslint config discovery, tsc strictness, sorbet setup). Need sane defaults, per-repo `tds.toml` overrides, and severity filtering so views inform rather than overwhelm.
 - **Analyzer performance** — full-repo runs of several tools can be slow on large repos. Mitigated by per-file caching and parallel/opt-in runs, but needs measurement.
-- **View volume in the bundle** — many findings across many tools could bloat the bundle; may need per-view thresholds or summarization.
+- **View volume on the site** — many findings across many tools could bloat the Findings tab; the panel filters and the heatmap caps at 60 rows help, but a very large set may want per-view thresholds or summarization.
 - **Tool version drift** — a view is only reproducible if the tool version is recorded (it is) and ideally re-runnable; different tool versions yield different findings. Provenance is shown; exact re-run is not guaranteed.
 
 ---
 
 ## 13. v1 scope line
 
-**In:** Go core binary (`map`, `analyze`, `draft`, `build`, `check`); provider system (JSON protocol + tree-sitter fallback compiled in); v1 native providers — **Ruby/Rails** (prism + rubocop/brakeman/sorbet/simplecov/flog) and **JS/React** (TS compiler/react-docgen + eslint/tsc/coverage/complexity); full view system (annotations/heatmap/panel/badge); Markdown tour format + JSON manifest; onboarding template; directory bundle (+ optional single-file); scrollytelling+keyboard viewer with free-browse; SHA-pinned whole-repo embed; SQLite+JSON store.
+**In:** Go core binary (`map`, `analyze`, `draft`, `build`, `check`); provider system (JSON protocol + tree-sitter fallback compiled in); v1 native providers — **Ruby/Rails** (prism + rubocop/brakeman/sorbet/simplecov/flog) and **JS/React** (TS compiler/react-docgen + eslint/tsc/coverage/complexity); full view system (annotations/heatmap/panel/badge); Markdown tour format + JSON manifest; onboarding template; multi-page Hugo static site (tour + file pages + views) with free-browse; SHA-pinned per-file source; SQLite+JSON store. **Shipped so far:** the Ruby/Rails provider and its five analyzers, the full view system, and the site; the JS/React provider and `tds check` are designed but not yet built.
 
 **Out (later):** `serve` / Datasette mode; `review` / `demo` / interview templates; in-browser editor; live/auto-updating tours; providers beyond Ruby + JS/React (Python, Go, etc.); third-party providers; deep semantic analysis (call graphs, dataflow).
 

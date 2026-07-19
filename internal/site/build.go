@@ -138,7 +138,7 @@ func findHugo(override string) (path, version string, err error) {
 			"hugo is required to build the site format but was not found on PATH.\n"+
 				"Install it (macOS: `brew install hugo`, or https://gohugo.io/installation/) — "+
 				"the extended build of %s or newer is needed.\n"+
-				"The single-file bundle format needs no external tools.", minHugoVersion)
+				"See https://gohugo.io/installation/ for other platforms.", minHugoVersion)
 	}
 	out, err := exec.Command(resolved, "version").Output()
 	if err != nil {
