@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/charlesharris/tourdesource/internal/protocol"
 	"github.com/charlesharris/tourdesource/internal/provider"
@@ -35,8 +36,20 @@ type Options struct {
 	// name, sourced from tds.toml (TDS-27).
 	Config map[string]json.RawMessage
 
+	// Timeout bounds each provider request. Analysis is far slower than
+	// structure extraction — brakeman alone walks the whole application — so
+	// this defaults to DefaultTimeout rather than the provider package's much
+	// shorter handshake budget.
+	Timeout time.Duration
+
 	Warnf func(format string, a ...any) // non-fatal diagnostics sink
 }
+
+// DefaultTimeout bounds one provider's analyze request. Whole-program scanners
+// are minutes-scale on a large repository: Redmine's 1,109 Ruby files exceed the
+// provider package's 30-second default before rubocop has finished, and a
+// timeout there reads as "no findings", which is the worst possible failure.
+const DefaultTimeout = 15 * time.Minute
 
 // AnalyzerRun records what one advertised analyzer did, so the caller can report
 // what ran and — just as usefully — what would have run had its tool been
@@ -55,7 +68,11 @@ type Result struct {
 	Root       string
 	Commit     string
 	SQLitePath string
-	Providers  []string
+	Providers  []string // providers whose analyze run succeeded
+	// Attempted lists providers that advertised analyze and were asked. It
+	// differs from Providers when a run failed or timed out — the difference
+	// between "nothing here can analyze" and "the thing that can, broke".
+	Attempted  []string
 	Analyzers  []AnalyzerRun
 	Findings   int
 	Resolved   int // findings attributed to a symbol
@@ -121,13 +138,18 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	if err != nil {
 		warnf("provider discovery: %v", err)
 	}
-	host := provider.Open(ctx, specs, provider.Options{Warnf: warnf})
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	host := provider.Open(ctx, specs, provider.Options{Warnf: warnf, Timeout: timeout})
 	defer host.Close()
 
 	var (
 		findings  []protocol.Finding
 		runs      []AnalyzerRun
 		providers []string
+		attempted []string
 	)
 
 	for _, p := range host.Providers() {
@@ -138,6 +160,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		if len(batch) == 0 {
 			continue
 		}
+		attempted = append(attempted, p.Spec.Name)
 
 		res, err := p.Analyze(ctx, protocol.AnalyzeParams{
 			Root:      root,
@@ -183,6 +206,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	sort.Strings(providers)
+	sort.Strings(attempted)
 	sort.Slice(runs, func(i, j int) bool {
 		if runs[i].Provider != runs[j].Provider {
 			return runs[i].Provider < runs[j].Provider
@@ -195,6 +219,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		Commit:     commit,
 		SQLitePath: sqlitePath,
 		Providers:  providers,
+		Attempted:  attempted,
 		Analyzers:  runs,
 		Findings:   len(findings),
 		Resolved:   resolved,
