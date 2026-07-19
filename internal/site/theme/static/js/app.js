@@ -230,6 +230,50 @@
     });
   }
 
+  /* Findings panel: text + severity filtering, per view. Each control block
+     sits above its own table, so several views on one page filter apart. */
+  [].slice.call(document.querySelectorAll("[data-finding-filter]")).forEach(function (ctrl) {
+    var table = ctrl.parentNode.querySelector(".finding-table");
+    if (!table) return;
+    var rows = [].slice.call(table.querySelectorAll("[data-finding-row]"));
+    var search = ctrl.querySelector("[data-finding-search]");
+    var count = ctrl.querySelector("[data-finding-count]");
+    var empty = ctrl.parentNode.querySelector("[data-finding-empty]");
+    var buttons = [].slice.call(ctrl.querySelectorAll("[data-sev]"));
+    var off = {}; // severities toggled off
+
+    function apply() {
+      var q = (search.value || "").trim().toLowerCase();
+      var shown = 0;
+      rows.forEach(function (r) {
+        var ok = !off[r.getAttribute("data-severity")] &&
+          (!q || r.textContent.toLowerCase().indexOf(q) > -1);
+        r.hidden = !ok;
+        if (ok) shown++;
+      });
+      if (empty) empty.hidden = shown > 0;
+      if (count) count.textContent = shown === rows.length
+        ? "" : shown + " of " + rows.length;
+    }
+
+    if (search) search.addEventListener("input", apply);
+    buttons.forEach(function (b) {
+      b.addEventListener("click", function () {
+        var sev = b.getAttribute("data-sev");
+        // A button toggles its severity; turning the last one off would hide
+        // everything, so the click that empties the set instead resets to all.
+        if (off[sev]) { delete off[sev]; b.classList.add("is-on"); }
+        else { off[sev] = true; b.classList.remove("is-on"); }
+        var anyOn = buttons.some(function (x) { return !off[x.getAttribute("data-sev")]; });
+        if (!anyOn) {
+          off = {};
+          buttons.forEach(function (x) { x.classList.add("is-on"); });
+        }
+        apply();
+      });
+    });
+  });
+
   /* File page: mark flagged lines in the code pane. The code is highlighted
      server-side into a Chroma line-number table, so annotations are attached
      here rather than baked into the HTML — a marker per finding line, colored

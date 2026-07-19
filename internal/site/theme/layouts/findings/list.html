@@ -49,11 +49,26 @@
     {{ end }}
 
     {{ else }}
+    {{/* Filter controls: text over file/rule/message, plus a toggle per
+         severity that is present. On Redmine a single view is over a thousand
+         rows, and 63 of the rubocop findings are one style rule — filtering is
+         what turns the table into a panel. Jump-to-code survives it, because
+         filtering only hides rows; the links are untouched. */}}
+    <div class="finding-filter" data-finding-filter>
+      <input class="input finding-search" type="text" placeholder="Filter by file, rule or message…"
+             data-finding-search autocomplete="off">
+      <div class="finding-sev-toggle">
+        {{ with .counts.errors }}<button type="button" class="sev-btn sev-error is-on" data-sev="error">{{ . }} error{{ if ne (int .) 1 }}s{{ end }}</button>{{ end }}
+        {{ with .counts.warnings }}<button type="button" class="sev-btn sev-warning is-on" data-sev="warning">{{ . }} warning{{ if ne (int .) 1 }}s{{ end }}</button>{{ end }}
+        {{ with .counts.info }}<button type="button" class="sev-btn sev-info is-on" data-sev="info">{{ . }} info</button>{{ end }}
+      </div>
+      <span class="finding-count mono text-muted" data-finding-count></span>
+    </div>
     <table class="table finding-table">
       <thead><tr><th>File</th><th class="num">Line</th><th>Severity</th><th>Rule</th><th>Message</th></tr></thead>
       <tbody>
         {{ range .findings }}
-        <tr>
+        <tr data-finding-row data-severity="{{ .severity | lower }}">
           <td class="mono"><a class="link" href="{{ partial "fileurl" .path }}#L-{{ .start_line }}">{{ .path }}</a></td>
           <td class="num mono">{{ .start_line }}</td>
           <td><span class="sev sev-{{ .severity | lower }}">{{ .severity }}</span></td>
@@ -63,6 +78,7 @@
         {{ end }}
       </tbody>
     </table>
+    <p class="finding-empty text-muted" data-finding-empty hidden>No findings match this filter.</p>
     {{ end }}
   </section>
   {{ end }}

@@ -342,3 +342,20 @@ html, body { height: 100%; }
 .line-mark-info { background: var(--color-neutral-500); }
 .chroma .lnt.finding-line-error > .lnlinks { color: #b3261e; font-weight: 600; }
 .chroma .lnt.finding-line-warning > .lnlinks { color: var(--color-accent-800); }
+
+/* Findings panel filter (TDS-34). */
+.finding-filter { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  margin-bottom: var(--space-4); }
+.finding-search { max-width: 340px; flex: 1 1 240px; }
+.finding-sev-toggle { display: flex; gap: var(--space-2); }
+.sev-btn { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.03em; cursor: pointer;
+  padding: 3px 9px; border-radius: var(--radius-sm); border: 1px solid var(--color-neutral-300);
+  background: transparent; color: var(--color-neutral-500); }
+/* Off is the muted default; on carries the severity's own color, so the toggle
+   state reads the same as the badges it filters. */
+.sev-btn.is-on.sev-error { color: #7a2118; background: #fbeae7; border-color: #e7bdb5; }
+.sev-btn.is-on.sev-warning { color: var(--color-accent-800); background: var(--color-accent-100); border-color: var(--color-accent-300); }
+.sev-btn.is-on.sev-info { color: var(--color-neutral-700); background: var(--color-neutral-100); border-color: var(--color-neutral-300); }
+.sev-btn:not(.is-on) { text-decoration: line-through; }
+.finding-count { font-size: 12px; margin-left: auto; }
+.finding-empty { padding: var(--space-4) 0; font-size: 14px; }
