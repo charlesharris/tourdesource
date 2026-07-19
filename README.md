@@ -13,7 +13,8 @@ as **content** (diffable Markdown) and as an **experience** (the site below).
 
 ## What you get
 
-`tds build` renders five views over one pinned commit.
+`tds build` renders a browsable site over one pinned commit — tour, explorer,
+symbol index, architecture map, and (when you run `tds analyze`) findings.
 
 ### The tour
 
@@ -49,29 +50,124 @@ subsystem is for, and the role columns fill unevenly (see TDS-59, TDS-67).
 Inventing a subsystem's purpose is exactly the confident-but-wrong text the rest
 of the pipeline works to avoid, so it stays blank until it can be derived.
 
+### Findings — your linters, layered over the tour
+
+Optional, and the reason `tds analyze` exists. Run it and the site gains a
+**Findings** tab plus three ways of seeing the same data in context:
+
+- **Inline** — a severity-coloured dot in the gutter of every flagged line on a
+  file page, with the rule and message on hover.
+- **On the tour** — a stop shows what the analyzers flagged *inside the lines it
+  is showing*, as a collapsed chip below the prose.
+- **In the Explorer** — a complexity bar per file, so the risky files stand out
+  while you browse.
+
+Each view carries its **provenance** — `brakeman 8.0.4 · @ 7cc8af70` — because a
+finding without the tool, its version and the commit is an anonymous accusation.
+The panels filter by file, rule and severity; the heatmap ranks files by their
+worst measurement.
+
+Nothing here is presented as a verdict. The page says outright that this is tool
+output, that a finding can be a false positive or a deliberate choice, and that
+none of it has been reviewed by the tour's author.
+
+On Redmine that is **1,504 findings** from rubocop, brakeman and flog — of which
+the eight brakeman *errors* are the part worth a newcomer's attention, which is
+exactly what the ranking surfaces.
+
 The site is **pinned to a commit** and carries its own copy of the source, so a
 shared tour is always internally consistent — it cannot drift from the code it
 describes.
 
-## Quickstart
-
-Requires **[Hugo extended](https://gohugo.io/installation/) ≥ 0.128** on `PATH`
-(`brew install hugo`) — the site is rendered from Hugo templates.
+## Install
 
 ```sh
-# 1. Build the structural map of a repository (symbols, imports, git signals)
-tds map .
+git clone https://github.com/charlesharris/tourdesource
+cd tourdesource
+make install
+```
 
-# 2. Generate a tour skeleton from the map, then curate the prose
-tds draft .
-$EDITOR .tds/myproject.tour.md
+`make install` checks the toolchain, builds `tds` onto your `PATH` (wherever
+`go install` puts binaries), and wires the Ruby provider so it is discovered
+automatically — no environment variables to set. Re-run it after pulling, or
+after moving the clone.
 
-# 3. Compile to a static site
-tds build .tds/myproject.tour.md
+Then head to the [Quickstart](#quickstart-tour-your-own-project).
 
-# 4. Serve it — open index.html directly and ⌘K search won't work,
-#    because file:// blocks the fetch that reads the search index
-cd .tds/site && python3 -m http.server 8000
+### Prerequisites
+
+`make install` verifies these and tells you what is missing:
+
+| Tool | Version | For |
+|---|---|---|
+| **Go** | 1.25+ | building the core |
+| **Hugo** | extended 0.128+ | `tds build` (site rendering) — `brew install hugo` |
+| **Ruby** | 3.4+ | the Ruby/Rails provider (prism ships as a default gem) — optional; other languages degrade to line-range anchors |
+
+The **analyzers** (`tds analyze`) are the repo's own tools — `rubocop`,
+`brakeman`, `flog`, `simplecov`, `sorbet`. Each is availability-gated: whatever
+is installed runs, the rest are reported as skipped rather than failing.
+
+Working on tds itself:
+
+```sh
+make build        # -> ./bin/tds, no install
+make check        # lint + tests
+```
+
+## Quickstart: tour your own project
+
+After [installing](#install), point `tds` at any repository. It works from
+inside the project or from anywhere via an explicit path.
+
+```sh
+cd ~/src/my-project
+
+tds map .                        # structural index: symbols, imports, git signals
+tds analyze .                    # optional: run your linters into findings
+tds draft . --narrate            # AI writes the first-draft prose (your subscription)
+$EDITOR .tds/my-project.tour.md  # curate — the part only a human can do
+tds build .tds/my-project.tour.md
+```
+
+Then **serve it** (see below) and open <http://localhost:8000>.
+
+Each stage is independent and re-runnable. Skip `analyze` and you get the tour
+without the findings layer; skip `--narrate` and every stop carries a `TODO`
+plus the evidence tds used to pick it, so you are editing rather than starting
+from a blank page.
+
+Touring a repo you don't own, without dirtying its checkout? See
+[Touring a repository you don't own](#touring-a-repository-you-dont-own).
+
+### Serve the site
+
+The output is a directory of static files. Any static server works:
+
+```sh
+cd .tds/site && python3 -m http.server 8000     # then http://localhost:8000
+
+# or, if you prefer:
+npx serve .tds/site
+ruby -run -e httpd .tds/site -p 8000
+```
+
+**Serve it — don't open `index.html` directly.** The site reads a static
+`index.json` over `fetch`, which `file://` blocks, so opening the file straight
+from disk silently disables ⌘K search and the full file tree. Everything else
+still reads fine.
+
+To publish, copy `.tds/site/` anywhere that serves static files — GitHub Pages,
+S3, Netlify, an nginx directory. URLs are relative, so it works from a subpath.
+
+### Iterating on the theme
+
+`--keep-project` leaves the generated Hugo project in place so you can run
+`hugo server` against real data:
+
+```sh
+tds build .tds/my-project.tour.md --project-dir /tmp/tds-site --keep-project
+cd /tmp/tds-site && hugo server
 ```
 
 `tds draft` does the structural work — it ranks your entrypoints, landmarks and
@@ -88,8 +184,8 @@ tds draft . --narrate
 
 `--narrate` hands the finished skeleton to Claude Code — running in a tmux pane
 on **your own subscription**, no API key — along with the source each stop
-anchors, and asks only for prose. On Redmine that fills all 18 stops in a single
-request.
+anchors, and asks only for prose. On Redmine that fills all 19 stops in two
+requests, in about a minute.
 
 The division of labour is the point. **tds decides what to point at; the model
 only writes about it.** Anchors are chosen from the map before the assistant is
@@ -256,50 +352,6 @@ See [`docs/design.md`](docs/design.md) for the full design,
 [`docs/implementation-plan.md`](docs/implementation-plan.md) for the roadmap, and
 [`docs/tmux-orchestration.md`](docs/tmux-orchestration.md) for how `--narrate`
 drives the assistant.
-
-## Install
-
-```sh
-git clone https://github.com/charlesharris/tourdesource
-cd tourdesource
-make install
-```
-
-`make install` checks the toolchain, builds `tds` onto your `PATH` (wherever
-`go install` puts binaries), and wires the Ruby provider so it is discovered
-automatically — no environment variables. Then, against any repository:
-
-```sh
-tds map    ~/src/some-repo
-tds draft  ~/src/some-repo                 # add --narrate for AI prose
-tds analyze ~/src/some-repo                # optional: linter/security/complexity views
-tds build  ~/src/some-repo/.tds/*.tour.md --repo ~/src/some-repo
-cd ~/src/some-repo/.tds/site && python3 -m http.server 8000
-```
-
-To keep the subject repo's checkout clean, write everything out of tree — see
-[Touring a repository you don't own](#touring-a-repository-you-dont-own).
-
-### Prerequisites
-
-`make install` verifies these and tells you what is missing:
-
-| Tool | Version | For |
-|---|---|---|
-| **Go** | 1.25+ | building the core |
-| **Hugo** | extended 0.128+ | `tds build` (site rendering) — `brew install hugo` |
-| **Ruby** | 3.4+ | the Ruby/Rails provider (prism ships as a default gem) — optional; other languages degrade to line-range anchors |
-
-The **analyzers** (`tds analyze`) are the repo's own tools — `rubocop`,
-`brakeman`, `flog`, `simplecov`, `sorbet`. Each is availability-gated: whatever
-is installed runs, the rest are reported as skipped rather than failing.
-
-Working on tds itself:
-
-```sh
-make build        # -> ./bin/tds, no install
-make check        # lint + tests
-```
 
 ## Documentation
 
