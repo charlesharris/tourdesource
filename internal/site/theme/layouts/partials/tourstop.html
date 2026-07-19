@@ -17,6 +17,18 @@
     <a class="mono link tour-file" href="{{ partial "fileurl" . }}">{{ . }}</a>
     {{ end }}
 
+    {{/* An explicit view= on the stop deep-links into the switcher, isolated to
+         that view (design §8). Rendered only when the view exists in this
+         build, so a stale id is a no-op rather than a dead link. */}}
+    {{ with $stop.view }}
+    {{ $id := . }}
+    {{ range site.Data.views.views }}
+    {{ if eq .id $id }}
+    <a class="mono link stop-view-link" href="{{ "/findings/" | relURL }}#{{ $id }}">Open the {{ .title }} →</a>
+    {{ end }}
+    {{ end }}
+    {{ end }}
+
     {{/* Anchor provenance: shown only when the anchor did not resolve cleanly. */}}
     {{ with $stop.anchor }}
       {{ if not .resolved }}

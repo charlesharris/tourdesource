@@ -11,8 +11,19 @@
   This is tool output, not a verdict — a finding can be a false positive or a
   deliberate choice, and nothing here has been reviewed by the tour's author.</p>
 
+  {{/* View switcher: one toggle per view, all on by default. A stop's
+       view= deep link arrives as #<view-id> and app.js isolates that view
+       (design §8). More than one view can be active at once. */}}
+  {{ if gt (len $v.views) 1 }}
+  <div class="view-switch" data-view-switch>
+    {{ range $v.views }}
+    <button type="button" class="view-toggle is-on mono" data-view-toggle="{{ .id }}">{{ .title }}</button>
+    {{ end }}
+  </div>
+  {{ end }}
+
   {{ range $v.views }}
-  <section class="view">
+  <section class="view" id="{{ .id }}" data-view="{{ .id }}">
     <div class="view-head">
       <h3>{{ .title }}</h3>
       <div class="view-counts mono">

@@ -364,3 +364,11 @@ html, body { height: 100%; }
    sit inside a table row. */
 .heat-inline { min-width: 80px; max-width: 140px; height: 6px; }
 .file-table th:last-child, .file-table td:last-child { width: 150px; }
+
+/* View switcher (TDS-36). */
+.view-switch { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-6); }
+.view-toggle { cursor: pointer; font-size: 12px; padding: 4px 11px; border-radius: var(--radius-sm);
+  border: 1px solid var(--color-neutral-300); background: transparent; color: var(--color-neutral-500); }
+.view-toggle.is-on { color: var(--color-accent-800); border-color: var(--color-accent); background: var(--color-accent-100); }
+.view-toggle:not(.is-on) { text-decoration: line-through; }
+.stop-view-link { display: inline-block; font-size: 12px; margin-bottom: var(--space-4); }

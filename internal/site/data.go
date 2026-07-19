@@ -107,6 +107,9 @@ type TourStop struct {
 	Findings []StopFinding `json:"findings,omitempty"`
 	// Counts summarise them for the chip shown before the list is opened.
 	Counts FindingCounts `json:"counts,omitempty"`
+	// View is an optional view id the stop deep-links to (design §8), so
+	// narration can point at a specific analyzer layer.
+	View string `json:"view,omitempty"`
 }
 
 // StopFinding is one analyzer finding on a tour stop.
@@ -326,6 +329,7 @@ func buildStops(stops []manifest.Stop, byPath map[string][]protocol.Finding) []T
 			File:  s.Anchor.Path,
 			HL:    lineRange(s.Anchor),
 			Prose: s.Prose,
+			View:  s.View,
 			Anchor: StopAnchor{
 				Raw:      s.Anchor.Raw,
 				Symbol:   s.Anchor.Symbol,

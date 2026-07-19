@@ -230,6 +230,36 @@
     });
   }
 
+  /* Findings view switcher: toggle each view independently, and honour a
+     #<view-id> deep link from a tour stop by isolating that view. */
+  var switcher = document.querySelector("[data-view-switch]");
+  if (switcher) {
+    var toggles = [].slice.call(switcher.querySelectorAll("[data-view-toggle]"));
+    function setView(id, on) {
+      var section = document.querySelector('[data-view="' + id + '"]');
+      var btn = switcher.querySelector('[data-view-toggle="' + id + '"]');
+      if (section) section.hidden = !on;
+      if (btn) btn.classList.toggle("is-on", on);
+    }
+    toggles.forEach(function (b) {
+      b.addEventListener("click", function () {
+        var id = b.getAttribute("data-view-toggle");
+        setView(id, b.classList.contains("is-on") ? false : true);
+      });
+    });
+    // A stop deep-links as /findings/#<view-id>: show only that view, so the
+    // reader lands on the layer the narration pointed at.
+    function isolate() {
+      var id = location.hash.slice(1);
+      if (!id || !document.querySelector('[data-view="' + id + '"]')) return;
+      toggles.forEach(function (b) {
+        setView(b.getAttribute("data-view-toggle"), b.getAttribute("data-view-toggle") === id);
+      });
+    }
+    isolate();
+    window.addEventListener("hashchange", isolate);
+  }
+
   /* Findings panel: text + severity filtering, per view. Each control block
      sits above its own table, so several views on one page filter apart. */
   [].slice.call(document.querySelectorAll("[data-finding-filter]")).forEach(function (ctrl) {
