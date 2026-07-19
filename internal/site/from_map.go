@@ -1,6 +1,7 @@
 package site
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -92,7 +93,7 @@ func LoadInput(opts FromMapOptions) (Input, error) {
 	}
 
 	source := make(map[string]string, len(files))
-	skipped := 0
+	skipped, minified := 0, 0
 	for _, f := range files {
 		if f.Language == "" {
 			continue
@@ -110,10 +111,20 @@ func LoadInput(opts FromMapOptions) (Input, error) {
 		if !isText(src) {
 			continue
 		}
+		// Minified bundles are the worst case for highlighting: Chroma wraps
+		// every token in a span, so Redmine's 342KB jquery-ui produced a 3.1MB
+		// page — under the byte cap, but nobody reads a tour of it anyway.
+		if isMinified(src) {
+			minified++
+			continue
+		}
 		source[f.Path] = string(src)
 	}
 	if skipped > 0 {
 		warnf("%d file(s) larger than %d bytes have pages without code", skipped, opts.MaxSourceBytes)
+	}
+	if minified > 0 {
+		warnf("%d minified file(s) have pages without code", minified)
 	}
 
 	return Input{
@@ -160,6 +171,27 @@ func isText(b []byte) bool {
 		}
 	}
 	return true
+}
+
+// minifiedAvgLineBytes is the average line length above which a file is treated
+// as machine-generated. Hand-written code sits around 30 bytes/line across every
+// language in Redmine; the minified bundles there average 14,000 and 42,000. The
+// gap is wide enough that the exact threshold does not matter much — this one
+// leaves two orders of magnitude of headroom for long-lined but authored code.
+const minifiedAvgLineBytes = 500
+
+// isMinified reports whether b looks machine-generated rather than authored.
+//
+// It measures average line length rather than matching paths: `*.min.js` and
+// `vendor/` miss plenty of real cases — Redmine's worst offender is committed as
+// `app/assets/javascripts/jquery-3.7.1-ui-1.13.3.js`, which no path rule would
+// catch — and would wrongly strip readable vendored code that is fine to show.
+func isMinified(b []byte) bool {
+	if len(b) < minifiedAvgLineBytes {
+		return false
+	}
+	lines := bytes.Count(b, []byte{'\n'}) + 1
+	return len(b)/lines > minifiedAvgLineBytes
 }
 
 func orDefault(s, fallback string) string {

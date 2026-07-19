@@ -345,6 +345,28 @@ func TestSlugForIsStable(t *testing.T) {
 	}
 }
 
+// TestIsMinified covers TDS-69: minified bundles expand ~9x under Chroma, so
+// they must be detected by shape rather than by filename.
+func TestIsMinified(t *testing.T) {
+	authored := strings.Repeat("  def finalize(invoice, now = Time.current)\n", 400)
+	if isMinified([]byte(authored)) {
+		t.Error("authored Ruby at ~44 bytes/line must not be treated as minified")
+	}
+	// Redmine ships this as jquery-3.7.1-ui-1.13.3.js — no .min in the name.
+	bundle := strings.Repeat("!function(e,t){\"object\"==typeof module?module.exports=t(e):e.$=t(e)}", 900) + "\n"
+	if !isMinified([]byte(bundle)) {
+		t.Error("a single-line bundle must be treated as minified")
+	}
+	// Long but authored: a wide table or a long string literal per line.
+	wide := strings.Repeat(strings.Repeat("x", 300)+"\n", 50)
+	if isMinified([]byte(wide)) {
+		t.Error("300 bytes/line is long but plausible for authored code")
+	}
+	if isMinified([]byte("short\n")) {
+		t.Error("a tiny file cannot be judged minified")
+	}
+}
+
 // TestThemeIsEmbedded guards against shipping a binary that cannot build a site.
 func TestThemeIsEmbedded(t *testing.T) {
 	for _, want := range []string{
