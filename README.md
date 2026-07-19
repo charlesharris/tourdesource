@@ -2,33 +2,61 @@
 
 **Analyze a repository and produce a shareable, interactive _tour_ of the codebase** —
 for onboarding, demos, code review, and interviews. A tour is guided narration
-anchored to real code, compiled into a self-contained static site you can open in
-a browser or email to someone. It's shareable both as **content** (diffable
-Markdown) and as an **experience** (the viewer below).
+anchored to real code, compiled into a browsable static site. It's shareable both
+as **content** (diffable Markdown) and as an **experience** (the site below).
 
-![The tds viewer showing a tour of this repo](docs/images/tour-light.png)
+![The overview page of a generated tour of Redmine](docs/images/site-overview.png)
 
-> The screenshots on this page are a **real tour of this repository's Ruby
-> provider**, produced by `tds map` + `tds build`. The tour source is
-> [`docs/tours/ruby-provider.tour.md`](docs/tours/ruby-provider.tour.md).
+> Every screenshot on this page is a **real tour of
+> [Redmine](https://github.com/redmine/redmine)** — 2,264 files, 11,943 symbols —
+> produced by `tds map` + `tds draft --narrate` + `tds build`, unedited.
 
-## How it works
+## What you get
 
-A tour walks the reader through code in a deliberate order. The left rail is the
-narration — chapters and stops; the right pane shows the actual source, and each
-stop drives the code pane to its **anchor** (a symbol like
-`app/models/invoice.rb::Invoice#finalize`, resolved to a concrete line range).
-Stops can carry collapsible **side-quests** for role-specific detours.
+`tds build` renders five views over one pinned commit.
 
-| Side-quests (detours) | Dark theme |
+### The tour
+
+The reason the thing exists. Narration walks the reader through code in a
+deliberate order: prose on the left, the actual source on the right, each stop
+resolved to a concrete line range from its **anchor** (a symbol like
+`app/models/invoice.rb::Invoice#finalize`). Stops can carry collapsible
+**side-quests** — the `↳` entries under *Side quests* in the outline.
+
+![The tour view, prose beside highlighted source](docs/images/site-tour.png)
+
+### Explorer and symbol index
+
+Free browsing over the whole repository, not just the files the tour visits:
+a page per source file with its commentary, imports and importers, plus a
+filterable index of every class, module and method. `⌘K` searches files, symbols
+and tour stops together.
+
+| Explorer | Symbol index |
 |---|---|
-| ![A detour expanded](docs/images/tour-detour.png) | ![Dark theme](docs/images/tour-dark.png) |
+| ![The file explorer](docs/images/site-explorer.png) | ![The symbol index](docs/images/site-symbols.png) |
 
-The bundle is **pinned to a commit** and fully self-contained — no server, no
-network, no external assets — so a shared tour is always internally consistent
-and works offline.
+### Architecture map
+
+Subsystems derived from the map, arranged by role, with dependencies lifted from
+file-level import edges.
+
+![The architecture map](docs/images/site-architecture.png)
+
+Grouping and every number here are measured, but the naming pass is not built
+yet, so subsystem descriptions still say what was counted rather than what the
+subsystem is for, and the role columns fill unevenly (see TDS-59, TDS-67).
+Inventing a subsystem's purpose is exactly the confident-but-wrong text the rest
+of the pipeline works to avoid, so it stays blank until it can be derived.
+
+The site is **pinned to a commit** and carries its own copy of the source, so a
+shared tour is always internally consistent — it cannot drift from the code it
+describes.
 
 ## Quickstart
+
+Requires **[Hugo extended](https://gohugo.io/installation/) ≥ 0.128** on `PATH`
+(`brew install hugo`) — the site is rendered from Hugo templates.
 
 ```sh
 # 1. Build the structural map of a repository (symbols, imports, git signals)
@@ -38,9 +66,12 @@ tds map .
 tds draft .
 $EDITOR .tds/myproject.tour.md
 
-# 3. Compile to a self-contained bundle and open it
+# 3. Compile to a static site
 tds build .tds/myproject.tour.md
-open .tds/tour/index.html
+
+# 4. Serve it — open index.html directly and ⌘K search won't work,
+#    because file:// blocks the fetch that reads the search index
+cd .tds/site && python3 -m http.server 8000
 ```
 
 `tds draft` does the structural work — it ranks your entrypoints, landmarks and
@@ -129,13 +160,13 @@ tds draft "$REPO" --map-dir "$WORK/map" --out "$WORK/redmine.tour.md"
 # 3. Curate the prose (this is the part only a human can do)
 $EDITOR "$WORK/redmine.tour.md"
 
-# 4. Build -> $WORK/site/index.html
+# 4. Build -> $WORK/site/
 tds build "$WORK/redmine.tour.md" \
     --repo "$REPO" \
     --map  "$WORK/map/map.sqlite" \
     --out  "$WORK/site"
 
-open "$WORK/site/index.html"
+cd "$WORK/site" && python3 -m http.server 8000
 ```
 
 This leaves a self-describing layout, and `git status` in `$REPO` stays clean:
@@ -147,33 +178,37 @@ This leaves a self-describing layout, and `git status` in `$REPO` stays clean:
 │   └── map.json            # same data, diffable
 ├── redmine.tour.md         # the tour source — the thing you edit and version
 └── site/
-    ├── index.html          # the shareable tour (open this)
-    ├── manifest.json       # compiled tour + resolved anchors
-    └── repo/               # the pinned source snapshot the viewer reads
+    ├── index.html          # the overview — start here
+    ├── index.json          # search index behind ⌘K
+    ├── tour/               # the guided narration
+    ├── files/              # a page per source file
+    ├── architecture/  symbols/
+    └── css/  js/
 ```
 
 The `.tour.md` is the artifact worth keeping in version control — it's the
-curation. The map and the bundle are both reproducible from it plus the repo at
+curation. The map and the site are both reproducible from it plus the repo at
 the pinned commit.
 
-**Scale.** Redmine (2,264 files, ~1,100 Ruby) maps in under two seconds and
-yields ~13k symbols. The built bundle embeds the whole repo at the pinned commit,
-so it runs to tens of MB — that's the cost of a tour that works offline with no
-server.
+**Scale.** Redmine (2,264 files, ~1,100 Ruby) maps in under three seconds and
+yields 11,943 symbols; the site builds in ~13s to 1,371 file pages. It runs to
+tens of MB, because every file page carries its own source — that's the cost of
+a tour you can read without the repository beside you.
 
 ## Pipeline
 
 `tds` is a small Go binary that orchestrates discrete, inspectable stages.
 Deep language analysis lives in out-of-process **providers** behind a
-[versioned JSON protocol](docs/protocol.md), so the core stays language-neutral
-and ships as one static binary.
+[versioned JSON protocol](docs/protocol.md), so the core stays language-neutral.
+`tds build` additionally requires **Hugo extended ≥ 0.128**, since the site is
+rendered from Hugo templates.
 
 | Stage | What it does | Status |
 |---|---|---|
 | `tds map` | Structural index: symbols, imports, Rails entrypoints, git signals → SQLite + JSON | ✅ working |
 | `tds analyze` | Run language tooling (linters, types, coverage) into normalized findings | 🚧 pipeline built, no command yet (M3) |
 | `tds draft` | Generate a curated-ready tour skeleton from the map, optionally narrated by an assistant (`--narrate`) | ✅ working |
-| `tds build` | Compile a tour into a self-contained static bundle | ✅ working |
+| `tds build` | Compile a tour into a multi-page static site (requires Hugo) | ✅ working |
 | `tds check` | Re-resolve anchors against HEAD and report drift | 🚧 planned |
 
 **Languages:** Ruby/Rails today (via a prism-based provider); JavaScript/React
