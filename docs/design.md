@@ -11,7 +11,7 @@
 
 **tour-de-source** (`tds`) analyzes a source repository and produces a **shareable, interactive "tour"** of the project. A tour is guided narration anchored to real code — an author writes (with heavy AI assistance) an ordered walk through the codebase, and `tds` compiles it into a self-contained static site that a reader can follow on-rails *or* wander off of to browse the whole repo freely.
 
-The product's north star is that a tour is **shareable both as content and as an experience**: the source of a tour is diffable Markdown you can review in a PR; the output is a frozen artifact you can host anywhere, or serve locally and hand to someone.
+The product's north star is that a tour is **shareable both as content and as an experience**: the source of a tour is diffable Markdown you can review in a PR; the output is a frozen artifact you can host anywhere — a bucket, a Pages site, or a laptop running a one-line static server.
 
 Target use cases, in eventual priority order: **onboarding, code review, demos, interviews.** **v1 is designed around onboarding / repo orientation**; the others are later authoring/rendering modes over the same core.
 
@@ -22,7 +22,7 @@ Target use cases, in eventual priority order: **onboarding, code review, demos, 
 ### Goals (v1)
 
 - Turn a repo into a high-quality **onboarding tour** with minimal human effort — AI drafts, human curates in ~20 minutes.
-- Produce a **self-contained static site** that is correct forever about its own snapshot: it carries the repo's source at the pinned SHA and needs no network. (A simple static file server serves it; the ⌘K search and full file tree read a static index over `fetch`, which wants a server rather than `file://`.)
+- Produce a **self-contained static site** that is correct forever about its own snapshot: it carries the repo's source at the pinned SHA and needs no network or backend. It does need to be *served* — any static file server will do — because pages link to each other by directory and browsers do not resolve those over `file://` (decision 5a).
 - Anchors that survive normal code churn (**symbol-first**, line-range fallback).
 - A site that supports **guided narration + free browsing** of the whole repo.
 - A **pluggable analysis pipeline**: per-language **providers** (native programs behind a JSON protocol) run existing tools (linters, security scanners, type checkers, coverage/complexity) and surface each tool's output as a toggleable **view** layered over the tour.
@@ -34,7 +34,7 @@ Target use cases, in eventual priority order: **onboarding, code review, demos, 
 
 - Deep semantic analysis (full call graphs, dataflow, type inference). We do lightweight, multi-language structural analysis only.
 - Live / auto-updating tours that track a moving branch. Tours are immutable, SHA-pinned artifacts by design.
-- A hosted service, accounts, or collaboration backend. Sharing is "host the site, or hand someone the folder."
+- A hosted service, accounts, or collaboration backend. Sharing is "put the site somewhere that serves static files" — anything from S3 to `python3 -m http.server`.
 - An in-browser tour *editor*. Authoring is file-based (Markdown) in v1.
 - Language coverage beyond the v1 set with full symbol support (others degrade gracefully).
 
@@ -231,7 +231,7 @@ Steps:
 4. Run Hugo over the embedded theme. **Syntax highlighting is Chroma at build time** (Hugo's `transform.Highlight`) → pre-rendered token HTML, no highlighter JS, zero runtime cost.
 5. **Views** — findings from the store become one view per (tool, kind), embedded as `data/views.json` and layered onto file pages (annotations), the Explorer (complexity shading), and tour stops (badges). All views with findings ship.
 
-**Output form:** a **multi-page static site** (written to `.tds/site`) — overview, architecture map, explorer, a page per source file, the tour, a symbol index, and (when analyzed) a findings tab. `relativeURLs = true`, so it serves from any subpath. Machine-generated files (minified bundles) and files over ~512KB get a page without a code block. There is no single-file variant (decision 19a).
+**Output form:** a **multi-page static site** (written to `.tds/site`) — overview, architecture map, explorer, a page per source file, the tour, a symbol index, and (when analyzed) a findings tab. `relativeURLs = true`, so it serves from any subpath (but must be served — see §8). Machine-generated files (minified bundles) and files over ~512KB get a page without a code block. There is no single-file variant (decision 19a).
 
 **Scale.** The site is many pages by design, so a large repo does not load as one document — the file tree is scoped per folder and hydrated on demand, and the Explorer paginates. Redmine (2,264 files) builds to ~1,371 file pages in ~15s.
 
@@ -289,7 +289,8 @@ A **view switcher** on the Findings tab toggles views independently; multiple ca
 - SHA-pinned: each file page carries its own source from the commit the map was built at, so the site cannot drift from the code it describes.
 - Relative URLs, so it serves from any subpath.
 - Pre-highlighted code (Chroma at build time, no runtime highlighter).
-- Reading degrades to static content with JS off; the ⌘K palette and the full file tree need JavaScript (they read `index.json` over `fetch`, which `file://` blocks — so the site is *served*, not opened as a file).
+- Reading degrades to static content with JS off; the ⌘K palette and the full file tree need JavaScript (they read `index.json` over `fetch`).
+- **Served, not opened.** Navigation is by directory URL (`/architecture/`), which a browser resolves to `index.html` only over HTTP — over `file://` it shows a directory listing instead. Any static server works; there is no build option that makes `file://` browsing work, because Hugo renders section indexes as directories regardless of `uglyURLs` (decision 5a).
 - Hugo extended ≥ 0.128 is a build dependency (decision 19b). There is no single-file variant (decision 19a).
 
 ---
@@ -363,6 +364,7 @@ A **view** is `{ id, title, kind, provenance, findings }` where `kind ∈ {annot
 | 3 | Symbol-first anchors + line fallback | Survives churn; only rename/delete breaks | Line-only (rots fast) |
 | 4 | Embed whole repo @ pinned SHA | Immutable, self-true sites; free-browse | Windows-only (on-rails only) |
 | 5 | Static site output (Hugo, TDS-62) | Shareable, hostable anywhere; no runtime | Single-file bundle (a second UI to maintain) |
+| 5a | The site is served, not opened from disk | Directory URLs keep hosted links clean, and the artifact's real life is hosted (Pages/S3/nginx/`http.server`) | `uglyURLs` or explicit `index.html` links — neither makes `file://` fully work (Hugo still renders section indexes as directories, and `fetch` stays blocked), so it would trade permanently uglier hosted URLs for a still-broken mode |
 | 6 | Markdown source → JSON manifest | Diffable, PR-reviewable, *is* content | Tool-owned JSON (bad to hand-edit) |
 | 7 | Linear spine + collapsible side-quests | Fits real onboarding without a maze | Strict linear (too flat); graph (confusing) |
 | 8 | Tab-per-view site + J/K stop stepping | Scales to thousands of files; reader- and presenter-capable | Single scrollytelling app (loads whole repo at once) |

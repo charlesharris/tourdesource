@@ -152,10 +152,11 @@ npx serve .tds/site
 ruby -run -e httpd .tds/site -p 8000
 ```
 
-**Serve it — don't open `index.html` directly.** The site reads a static
-`index.json` over `fetch`, which `file://` blocks, so opening the file straight
-from disk silently disables ⌘K search and the full file tree. Everything else
-still reads fine.
+**The site has to be served — opening it from disk does not work.** Pages link
+to each other by directory (`./architecture/`), and over `file://` a browser
+shows a directory listing instead of the page, so navigation breaks on the first
+click. ⌘K search and the file tree fail too, because `fetch` is blocked on
+`file://`. This is a hosted artifact, not an emailable file.
 
 To publish, copy `.tds/site/` anywhere that serves static files — GitHub Pages,
 S3, Netlify, an nginx directory. URLs are relative, so it works from a subpath.
