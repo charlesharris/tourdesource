@@ -7,8 +7,11 @@
     <h2>Explorer</h2>
     <p class="lede">Browse the repository. Pick a file from the tree, or scan the index below — every row links to its code and commentary.</p>
     <p class="kicker mono">{{ len $files }} files · showing {{ len $paginator.Pages }} on page {{ $paginator.PageNumber }} of {{ $paginator.TotalPages }} · press ⌘K to jump to any file</p>
+    {{/* The complexity column only appears when something was measured, so a
+         repository with no analysis is not given an empty column (TDS-33). */}}
+    {{ $heat := site.Data.manifest.hasComplexity }}
     <table class="table file-table">
-      <thead><tr><th>File</th><th>Subsystem</th><th class="num">Lines</th><th class="num">Commits</th></tr></thead>
+      <thead><tr><th>File</th><th>Subsystem</th><th class="num">Lines</th><th class="num">Commits</th>{{ if $heat }}<th>Complexity</th>{{ end }}</tr></thead>
       <tbody>
         {{ range $paginator.Pages }}
         <tr class="row-link" onclick="location.href='{{ .RelPermalink }}'">
@@ -16,6 +19,15 @@
           <td>{{ .Params.subsystem }}</td>
           <td class="num mono">{{ .Params.lines }}</td>
           <td class="num mono">{{ .Params.commits }}</td>
+          {{ if $heat }}
+          <td>
+            {{ if gt (.Params.heatValue | default 0.0) 0.0 }}
+            <div class="heat heat-inline" title="flog complexity {{ lang.FormatNumber 1 .Params.heatValue }}">
+              <span style="width: {{ .Params.heatPct }}%"></span>
+            </div>
+            {{ end }}
+          </td>
+          {{ end }}
         </tr>
         {{ end }}
       </tbody>

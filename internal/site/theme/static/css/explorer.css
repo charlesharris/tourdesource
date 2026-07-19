@@ -359,3 +359,8 @@ html, body { height: 100%; }
 .sev-btn:not(.is-on) { text-decoration: line-through; }
 .finding-count { font-size: 12px; margin-left: auto; }
 .finding-empty { padding: var(--space-4) 0; font-size: 14px; }
+
+/* Explorer complexity shading (TDS-33). Reuses the heatmap bar, sized down to
+   sit inside a table row. */
+.heat-inline { min-width: 80px; max-width: 140px; height: 6px; }
+.file-table th:last-child, .file-table td:last-child { width: 150px; }

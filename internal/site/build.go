@@ -218,11 +218,12 @@ func writeData(in Input, dir string, opts Options) (*Result, error) {
 	refs := ReferenceCounts(in.Symbols, in.Imports)
 	importedBy := InvertImports(in.Imports)
 
-	manifestJSON := buildManifest(in, subs, columnsFor(subs), derivation)
 	// Views are derived from the findings already in the store, so what the
 	// site shows is exactly what `tds analyze` recorded at this commit.
 	views := view.Build(in.Findings, in.Commit)
 	findingsByPath := view.ByPath(views)
+	heatByPath := heatByFile(views)
+	manifestJSON := buildManifest(in, subs, columnsFor(subs), derivation, len(heatByPath) > 0)
 	tour := buildTour(in.Manifest, findingsByPath)
 	symbols := buildSymbols(in, subsystemOf, refs, opts.MaxSymbols)
 
@@ -241,7 +242,7 @@ func writeData(in Input, dir string, opts Options) (*Result, error) {
 		}
 	}
 
-	pages, err := writeFilePages(in, dir, subsystemOf, importedBy, tour, findingsByPath)
+	pages, err := writeFilePages(in, dir, subsystemOf, importedBy, tour, findingsByPath, heatByPath)
 	if err != nil {
 		return nil, err
 	}
@@ -265,6 +266,7 @@ func writeFilePages(
 	importedBy map[string][]string,
 	tour SiteTour,
 	findingsByPath map[string][]protocol.Finding,
+	heatByPath map[string]heat,
 ) (int, error) {
 	filesDir := filepath.Join(dir, "content", "files")
 	if err := os.MkdirAll(filesDir, 0o755); err != nil {
@@ -330,6 +332,8 @@ func writeFilePages(
 			ImportedBy: importedBy[f.Path],
 			TourStops:  stopsByPath[f.Path],
 			Findings:   pageFindings(findingsByPath[f.Path]),
+			HeatPct:    heatByPath[f.Path].pct,
+			HeatValue:  heatByPath[f.Path].value,
 			Code:       src,
 		}
 
@@ -385,6 +389,9 @@ func renderFrontmatter(p FilePage) []byte {
 	writeList(&b, "imports", p.Imports)
 	writeList(&b, "importedBy", p.ImportedBy)
 	writeList(&b, "tourStops", p.TourStops)
+	if p.HeatValue > 0 {
+		fmt.Fprintf(&b, "  heatPct: %d\n  heatValue: %s\n", p.HeatPct, strconv.FormatFloat(p.HeatValue, 'f', 1, 64))
+	}
 	if len(p.Findings) > 0 {
 		b.WriteString("  findings:\n")
 		for _, f := range p.Findings {
@@ -484,4 +491,52 @@ func findingRank(sev string) int {
 	default:
 		return 2
 	}
+}
+
+// heat is one file's complexity reading for the explorer shading.
+type heat struct {
+	value float64
+	pct   int
+}
+
+// heatByFile builds an uncapped per-file complexity map from the heatmap views.
+//
+// The Findings tab caps its heatmap table at 60 rows because it is a report;
+// the explorer shades every file it lists, so it needs the full set. Coverage
+// (a heatmap too, but higher-is-better) is deliberately not folded in: shading
+// one bar by two metrics that disagree on direction would be a lie. Complexity
+// is what the available analyzer produces, so complexity is what this shades.
+func heatByFile(views []view.View) map[string]heat {
+	peak := map[string]float64{}
+	for _, v := range views {
+		if v.Kind != protocol.ViewHeatmap {
+			continue
+		}
+		// Complexity only: a flog score. Coverage would need its own column.
+		if v.Provenance.Tool != "flog" {
+			continue
+		}
+		for _, f := range v.Findings {
+			if f.Value != nil && *f.Value > peak[f.Path] {
+				peak[f.Path] = *f.Value
+			}
+		}
+	}
+	if len(peak) == 0 {
+		return nil
+	}
+	var max float64
+	for _, v := range peak {
+		if v > max {
+			max = v
+		}
+	}
+	if max <= 0 {
+		max = 1
+	}
+	out := make(map[string]heat, len(peak))
+	for p, v := range peak {
+		out[p] = heat{value: v, pct: int(v / max * 100)}
+	}
+	return out
 }

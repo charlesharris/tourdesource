@@ -40,6 +40,9 @@ type SiteManifest struct {
 	// Derivation is how the subsystems were arrived at, so the architecture page
 	// can describe itself rather than always claiming a role layering.
 	Derivation string `json:"derivation"`
+	// HasComplexity is true when at least one file carries a complexity heat,
+	// so the explorer only draws the column when there is data for it.
+	HasComplexity bool `json:"hasComplexity"`
 }
 
 type RepoInfo struct {
@@ -183,7 +186,12 @@ type FilePage struct {
 	ImportedBy []string      `yaml:"importedBy"`
 	TourStops  []string      `yaml:"tourStops"`
 	Findings   []PageFinding `yaml:"findings"`
-	Code       string        `yaml:"code"`
+	// Heat shades the explorer by complexity: HeatPct is 0–100 relative to the
+	// hottest file, HeatValue the raw peak (a flog score) for the label. Zero
+	// when the file has no complexity measurement.
+	HeatPct   int     `yaml:"heatPct"`
+	HeatValue float64 `yaml:"heatValue"`
+	Code      string  `yaml:"code"`
 }
 
 // PageFinding is one analyzer finding on a file page, reduced to what the
@@ -225,7 +233,7 @@ type Input struct {
 }
 
 // buildManifest assembles data/manifest.json.
-func buildManifest(in Input, subs []Subsystem, columns []string, derivation string) SiteManifest {
+func buildManifest(in Input, subs []Subsystem, columns []string, derivation string, hasComplexity bool) SiteManifest {
 	langs := map[string]int{}
 	for _, f := range in.Files {
 		if f.Language != "" {
@@ -258,10 +266,11 @@ func buildManifest(in Input, subs []Subsystem, columns []string, derivation stri
 			{Value: humanCount(stops), Label: "Tour stops"},
 			{Value: humanCount(totalCommits), Label: "Commits"},
 		},
-		Dirs:       topDirs(in.Files, 8),
-		Columns:    columns,
-		Derivation: derivation,
-		Subsystems: subs,
+		Dirs:          topDirs(in.Files, 8),
+		Columns:       columns,
+		Derivation:    derivation,
+		HasComplexity: hasComplexity,
+		Subsystems:    subs,
 	}
 }
 
