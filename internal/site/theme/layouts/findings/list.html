@@ -28,6 +28,27 @@
       {{ with .provenance.commit }} · @ {{ substr . 0 12 }}{{ end }}
     </p>
 
+    {{ if eq .kind "heatmap" }}
+    {{/* Heatmap rows are aggregated per file in Go (internal/view): a flat list
+         of every method's score is a wall, not a map. */}}
+    <table class="table heat-table">
+      <thead><tr><th>File</th><th class="num">Entries</th><th class="num">Peak</th><th>Relative</th></tr></thead>
+      <tbody>
+        {{ range .files }}
+        <tr>
+          <td class="mono"><a class="link" href="{{ partial "fileurl" .path }}">{{ .path }}</a></td>
+          <td class="num mono">{{ .entries }}</td>
+          <td class="num mono">{{ .peak }}</td>
+          <td><div class="heat"><span style="width: {{ .pct }}%"></span></div></td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+    {{ if gt .counts.total (len .files) }}
+    <p class="text-muted mono view-more">The {{ len .files }} highest-scoring files, from {{ .counts.total }} measurements. Every score is on its own file's page.</p>
+    {{ end }}
+
+    {{ else }}
     <table class="table finding-table">
       <thead><tr><th>File</th><th class="num">Line</th><th>Severity</th><th>Rule</th><th>Message</th></tr></thead>
       <tbody>
@@ -42,6 +63,7 @@
         {{ end }}
       </tbody>
     </table>
+    {{ end }}
   </section>
   {{ end }}
   {{ end }}

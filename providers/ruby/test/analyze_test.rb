@@ -2,6 +2,7 @@
 
 require "minitest/autorun"
 require "tmpdir"
+require "fileutils"
 require "json"
 require "tds/analyze"
 
@@ -248,5 +249,141 @@ class AnalyzeTest < Minitest::Test
         assert_operator f["end_line"], :>=, f["start_line"]
       end
     end
+  end
+
+  # --- flog (TDS-29) -------------------------------------------------------
+
+  # Recorded verbatim from flog 4.9.4 on Redmine's app/models/time_entry.rb.
+  # The two header lines and the location-less "#none" bucket are exactly why
+  # the parser cannot simply split on ":".
+  FLOG_OUTPUT = <<~OUT
+       445.5: flog total
+        26.2: flog/method average
+
+       116.4: TimeEntry#validate_time_entry    app/models/time_entry.rb:164-193
+        91.5: TimeEntry#safe_attributes=       app/models/time_entry.rb:120-154
+        89.0: TimeEntry#none
+        31.6: TimeEntry#assignable_users       app/models/time_entry.rb:248-259
+        20.2: TimeEntry#spent_on=              app/models/time_entry.rb:217-222
+  OUT
+
+  class FakeFlog < TDS::Analyzers::Flog
+    def initialize(payload) = (@payload = payload)
+    def command(_root) = ["flog"]
+    def tool_version(_root) = "4.9.4"
+    def run_tool(_argv, _root) = @payload
+  end
+
+  def test_flog_scores_normalize_to_heatmap_findings
+    findings = FakeFlog.new(FLOG_OUTPUT).run(root: "/repo", files: ["app/models/time_entry.rb"])
+
+    # The totals and the location-less bucket are dropped; spent_on= is below
+    # the threshold. That leaves the three real methods at or above MIN_SCORE.
+    assert_equal 3, findings.size
+
+    f = findings.first
+    assert_equal "app/models/time_entry.rb", f["path"]
+    assert_equal 164, f["start_line"]
+    assert_equal 193, f["end_line"]
+    assert_equal "TimeEntry#validate_time_entry", f["symbol"]
+    assert_in_delta 116.4, f["value"], 0.01
+    assert_equal "heatmap", f["view"]
+    assert_equal "4.9.4", f["tool_version"], "provenance must survive normalization"
+  end
+
+  # Complexity is a measurement, not a defect: calling a long method an error
+  # would assert a judgement flog does not make.
+  def test_flog_findings_are_informational
+    findings = FakeFlog.new(FLOG_OUTPUT).run(root: "/repo", files: ["app/models/time_entry.rb"])
+    assert findings.all? { |f| f["severity"] == "info" }
+  end
+
+  def test_flog_drops_totals_and_locationless_entries
+    findings = FakeFlog.new(FLOG_OUTPUT).run(root: "/repo", files: ["app/models/time_entry.rb"])
+    symbols = findings.map { |f| f["symbol"] }
+    refute_includes symbols, "TimeEntry#none", "the out-of-method bucket points at no code"
+    assert(symbols.none? { |s| s.include?("flog") }, "header totals are not findings")
+  end
+
+  def test_flog_applies_its_threshold
+    below = findings_for("  20.2: A#b   a.rb:1-2\n")
+    assert_empty below, "below MIN_SCORE should not be reported"
+
+    at = findings_for("  25.0: A#b   a.rb:1-2\n")
+    assert_equal 1, at.size, "the threshold is inclusive"
+  end
+
+  # A single-line method has no range: "a.rb:12" rather than "a.rb:12-14".
+  def test_flog_handles_single_line_locations
+    f = findings_for("  30.0: A#b   a.rb:12\n").first
+    assert_equal 12, f["start_line"]
+    assert_equal 12, f["end_line"]
+  end
+
+  def findings_for(payload)
+    FakeFlog.new(payload).run(root: "/repo", files: ["a.rb"])
+  end
+
+  # --- simplecov (TDS-29) --------------------------------------------------
+
+  def test_simplecov_reads_the_resultset_and_computes_coverage
+    Dir.mktmpdir do |root|
+      write_resultset(root, { "RSpec" => { "coverage" => {
+        File.join(root, "lib/a.rb") => { "lines" => [1, 1, 1, nil, 0] }
+      } } })
+
+      findings = TDS::Analyzers::SimpleCov.new.run(root: root, files: ["lib/a.rb"])
+      assert_equal 1, findings.size
+      # nil means "not relevant" — a blank line or comment — and must not count
+      # against the file: 3 covered of 4 relevant.
+      assert_in_delta 75.0, findings.first["value"], 0.01
+      assert_equal "heatmap", findings.first["view"]
+      assert_equal "info", findings.first["severity"]
+    end
+  end
+
+  # SimpleCov has written the line array directly in older versions.
+  def test_simplecov_accepts_the_legacy_shape
+    Dir.mktmpdir do |root|
+      write_resultset(root, { "Minitest" => { "coverage" => {
+        File.join(root, "lib/a.rb") => [1, 1, 0, nil, 0]
+      } } })
+
+      findings = TDS::Analyzers::SimpleCov.new.run(root: root, files: ["lib/a.rb"])
+      assert_in_delta 50.0, findings.first["value"], 0.01
+    end
+  end
+
+  def test_simplecov_ignores_files_outside_the_request
+    Dir.mktmpdir do |root|
+      write_resultset(root, { "RSpec" => { "coverage" => {
+        File.join(root, "lib/a.rb") => { "lines" => [1] },
+        File.join(root, "lib/b.rb") => { "lines" => [1] }
+      } } })
+
+      findings = TDS::Analyzers::SimpleCov.new.run(root: root, files: ["lib/a.rb"])
+      assert_equal ["lib/a.rb"], findings.map { |f| f["path"] }
+    end
+  end
+
+  # Coverage cannot be produced on demand: running someone's test suite as a
+  # side effect of building a tour would be a startling thing to do. Absence is
+  # reported as a reason, not as a missing gem.
+  def test_simplecov_is_unavailable_without_a_report
+    Dir.mktmpdir do |root|
+      analyzer = TDS::Analyzers::SimpleCov.new
+      refute analyzer.available?(root)
+      reason = analyzer.unavailable_reason(root)
+      assert_includes reason, ".resultset.json"
+      assert_includes reason, "test suite"
+      refute_includes reason, "not installed"
+    end
+  end
+
+  def write_resultset(root, data)
+    dir = File.join(root, "coverage")
+    FileUtils.mkdir_p(dir)
+    FileUtils.mkdir_p(File.join(root, "lib"))
+    File.write(File.join(dir, ".resultset.json"), JSON.generate(data))
   end
 end

@@ -18,7 +18,8 @@ module TDS
   class Analyze
     # REGISTRY is the analyzers this provider offers, in report order.
     def self.registry
-      [Analyzers::Rubocop.new, Analyzers::Brakeman.new]
+      [Analyzers::Rubocop.new, Analyzers::Brakeman.new,
+       Analyzers::Flog.new, Analyzers::SimpleCov.new, Analyzers::Sorbet.new]
     end
 
     # capabilities describes each analyzer for the handshake, including whether
@@ -53,7 +54,7 @@ module TDS
         unless analyzer.available?(root)
           out["analyzer_errors"] << {
             "analyzer" => analyzer.name,
-            "message" => "#{analyzer.tool} is not installed"
+            "message" => analyzer.unavailable_reason(root)
           }
           next
         end
@@ -97,6 +98,12 @@ module TDS
       end
 
       def available?(root) = !command(root).nil?
+
+      # Why this analyzer did not run. The default is a missing binary; an
+      # analyzer that depends on something else says so, because "simplecov is
+      # not installed" sends someone to install a gem when what they actually
+      # need is to run their tests.
+      def unavailable_reason(_root) = "#{tool} is not installed"
 
       def tool_version(root)
         @tool_version ||= {}
@@ -221,6 +228,220 @@ module TDS
     end
 
     # Rubocop reports style and lint offenses as inline annotations.
+# Flog scores method complexity. It is a *measurement*, not a defect report:
+    # a high score is a reason to look, not evidence of a bug. Findings are
+    # therefore all informational and carry the score in `value`, which is what
+    # the heatmap renders. Calling a complex method an error would be asserting
+    # a judgement flog does not make.
+    class Flog < Base
+      # Report only methods at or above this score. Flog's community scale puts
+      # 0-10 at "awesome" and 11-20 at "good enough"; below ~25 the output is
+      # every method in the repository, which is a heatmap of nothing.
+      MIN_SCORE = 25.0
+      FILES_PER_RUN = 250
+
+      # "  116.4: TimeEntry#validate_time_entry    app/models/time_entry.rb:164-193"
+      # The location is optional: flog buckets code outside any method under
+      # "Class#none" with no file, and prints two header lines with no path.
+      LINE = /\A\s*([\d.]+):\s+(\S+)(?:\s+(.+?):(\d+)(?:-(\d+))?)?\s*\z/.freeze
+
+      def name = "flog"
+      def views = %w[heatmap badge]
+
+      def run(root:, files:)
+        ruby = files.select { |f| f.end_with?(".rb", ".rake") }
+        return [] if ruby.empty?
+
+        version = tool_version(root)
+        findings = []
+
+        ruby.each_slice(FILES_PER_RUN) do |slice|
+          # -a reports every method rather than only the worst offenders; the
+          # threshold is ours to apply, so we want the full list to apply it to.
+          payload = run_tool(command(root) + ["-a"] + slice, root)
+          payload.each_line do |line|
+            m = LINE.match(line)
+            next unless m
+
+            score, symbol, path, start_line, end_line = m.captures
+            # No path means a header total or flog's out-of-method bucket:
+            # neither points at code a reader can open.
+            next if path.nil?
+
+            score = score.to_f
+            next if score < MIN_SCORE
+
+            findings << {
+              "path" => relative(path, root),
+              "start_line" => start_line.to_i,
+              "end_line" => (end_line || start_line).to_i,
+              "symbol" => symbol,
+              "severity" => "info",
+              "rule" => "complexity",
+              "message" => format("Flog score %.1f for %s.", score, symbol),
+              "tool" => "flog",
+              "tool_version" => version,
+              "view" => "heatmap",
+              "value" => score
+            }.compact
+          end
+        end
+
+        findings
+      end
+
+      private
+
+      # flog answers --version with the literal string "flog: version unknown"
+      # and exits non-zero, so the base class's probe would both fail to get a
+      # version and conclude the tool is missing. -h succeeds and proves the
+      # executable runs.
+      def version_flag = "-h"
+
+      # The library knows its version even though the CLI does not, and a view
+      # without provenance is weaker than one with it.
+      public def tool_version(root)
+        @tool_version ||= {}
+        return @tool_version[root] if @tool_version.key?(root)
+
+        @tool_version[root] = flog_version(root)
+      end
+
+      def flog_version(root)
+        out, status = capture(["ruby", "-e", "require 'flog'; print Flog::VERSION"], root)
+        return nil unless status&.success?
+
+        out[/\d+\.\d+(\.\d+)?/]
+      end
+    end
+
+    # SimpleCov coverage. Unlike the other analyzers this runs no tool: coverage
+    # only exists if the project's own test suite has been run, and running a
+    # repository's tests as a side effect of building a tour would be a
+    # startling thing for `tds analyze` to do. It reads the report SimpleCov
+    # already wrote, and is simply unavailable when there is not one.
+    class SimpleCov < Base
+      RESULTSET = "coverage/.resultset.json"
+
+      def name = "simplecov"
+      def tool = "simplecov"
+      def views = %w[heatmap badge]
+
+      # Availability is the artifact's existence, not a binary on PATH.
+      def available?(root) = File.exist?(File.join(root, RESULTSET))
+      def command(root) = nil
+      def tool_version(root) = nil
+
+      def unavailable_reason(_root)
+        "no coverage report at #{RESULTSET} — run the project's test suite with " \
+          "SimpleCov enabled, then analyze again"
+      end
+
+      def run(root:, files:)
+        path = File.join(root, RESULTSET)
+        return [] unless File.exist?(path)
+
+        data = JSON.parse(File.read(path))
+        wanted = files.each_with_object({}) { |f, h| h[f] = true }
+        findings = []
+
+        data.each_value do |suite|
+          coverage = suite.is_a?(Hash) ? suite["coverage"] : nil
+          next unless coverage.is_a?(Hash)
+
+          coverage.each do |abs, entry|
+            rel = relative(abs, root)
+            next unless wanted[rel]
+
+            # SimpleCov has two shapes: a bare line array (older) and
+            # {"lines" => [...]} (current). nil means "not relevant" — a blank
+            # line or a comment — and must not count against the file.
+            lines = entry.is_a?(Hash) ? entry["lines"] : entry
+            next unless lines.is_a?(Array)
+
+            relevant = lines.count { |c| !c.nil? }
+            next if relevant.zero?
+
+            covered = lines.count { |c| !c.nil? && c.positive? }
+            pct = (covered.to_f / relevant * 100).round(1)
+
+            findings << {
+              "path" => rel,
+              "start_line" => 1,
+              "end_line" => lines.length,
+              "severity" => "info",
+              "rule" => "coverage",
+              "message" => format("%.1f%% line coverage (%d of %d relevant lines).",
+                                  pct, covered, relevant),
+              "tool" => "simplecov",
+              "view" => "heatmap",
+              "value" => pct
+            }
+          end
+        end
+
+        findings
+      end
+    end
+
+    # Sorbet type checking.
+    #
+    # UNVERIFIED against real output: sorbet was not installed when this was
+    # written and no repository to hand carries a sorbet/ config, so the parser
+    # below is built from sorbet's documented error format rather than from a
+    # captured run. It is availability-gated on both the binary and the config,
+    # so it stays dormant until someone has both — at which point this comment
+    # is the first thing to check if the findings look wrong.
+    class Sorbet < Base
+      # "app/models/foo.rb:12: Method `bar` does not exist on `Foo` https://srb.help/7003"
+      LINE = %r{\A(?<path>[^\s:]+):(?<line>\d+):\s*(?<message>.+?)(?:\s+(?<url>https://srb\.help/(?<code>\d+)))?\s*\z}.freeze
+
+      def name = "sorbet"
+      def tool = "srb"
+      def views = %w[annotations panel]
+
+      # A sorbet binary with no sorbet/config in the repository would type-check
+      # nothing and report a config error, which is noise rather than a finding.
+      def available?(root)
+        super && File.exist?(File.join(root, "sorbet", "config"))
+      end
+
+      def run(root:, files:)
+        return [] unless available?(root)
+
+        version = tool_version(root)
+        # srb tc exits non-zero when it finds errors, which is the normal case.
+        # run_tool only treats that as a failure when there is no output at all.
+        payload = run_tool(command(root) + ["tc", "--no-color"], root)
+        findings = []
+
+        payload.each_line do |line|
+          m = LINE.match(line.strip)
+          next unless m
+
+          rel = relative(m[:path], root)
+          findings << {
+            "path" => rel,
+            "start_line" => m[:line].to_i,
+            "end_line" => m[:line].to_i,
+            "severity" => "error",
+            "rule" => m[:code] ? "srb-#{m[:code]}" : "type",
+            "message" => m[:message],
+            "url" => m[:url],
+            "tool" => "sorbet",
+            "tool_version" => version,
+            "view" => "annotations"
+          }.compact
+        end
+
+        findings
+      end
+
+      private
+
+      def version_flag = "--version"
+    end
+
     class Rubocop < Base
       # ARG_MAX is finite and a Rails app can have thousands of Ruby files, so
       # invocations are chunked rather than passing every path at once.

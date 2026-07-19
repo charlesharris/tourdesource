@@ -92,8 +92,11 @@ func printAnalyzeSummary(cmd *cobra.Command, res *analyzer.Result) {
 		fmt.Fprintf(out, "  %-12s %d finding%s (%s %s)\n",
 			a.Name+":", a.Findings, plural(a.Findings), a.Tool, orNoVersion(a.ToolVersion))
 	}
+	// The provider says *why* it could not run — simplecov needs a coverage
+	// report, not an install — and that reason is already on stderr. Asserting
+	// "not installed" here would contradict it.
 	for _, a := range absent {
-		fmt.Fprintf(out, "  %-12s skipped — %s is not installed\n", a.Name+":", a.Tool)
+		fmt.Fprintf(out, "  %-12s skipped (see warnings above)\n", a.Name+":")
 	}
 
 	fmt.Fprintf(out, "  findings:    %d (%d attributed to a symbol", res.Findings, res.Resolved)

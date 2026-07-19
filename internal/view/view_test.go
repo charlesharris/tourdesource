@@ -112,3 +112,56 @@ func TestByPathAndBySymbol(t *testing.T) {
 		t.Error("an unattributed finding must not become an empty-symbol badge")
 	}
 }
+
+func fv(path string, v float64) protocol.Finding {
+	return protocol.Finding{Tool: "flog", View: protocol.ViewHeatmap, Severity: "info", Path: path, Value: &v}
+}
+
+// TestHeatmapAggregatesPerFile covers TDS-29: flog emits a score per method —
+// 1,390 of them on Redmine — and a flat list of that is a wall, not a map.
+func TestHeatmapAggregatesPerFile(t *testing.T) {
+	views := Build([]protocol.Finding{
+		fv("a.rb", 10), fv("a.rb", 90), fv("a.rb", 30),
+		fv("b.rb", 45),
+	}, "")
+	if len(views) != 1 {
+		t.Fatalf("want one heatmap view, got %d", len(views))
+	}
+	files := views[0].Files
+	if len(files) != 2 {
+		t.Fatalf("want one row per file, got %d", len(files))
+	}
+	if files[0].Path != "a.rb" || files[0].Peak != 90 || files[0].Entries != 3 {
+		t.Errorf("row = %+v, want a.rb ranked by its worst score with all 3 entries", files[0])
+	}
+	// Bars are relative to the view's own ceiling: flog scores and coverage
+	// percentages share no absolute scale.
+	if files[0].Pct != 100 {
+		t.Errorf("the top row should fill the bar, got %d%%", files[0].Pct)
+	}
+	if files[1].Pct != 50 {
+		t.Errorf("b.rb at 45 of 90 should be 50%%, got %d%%", files[1].Pct)
+	}
+}
+
+// TestHeatmapOnlyForHeatmapKind — a panel is a list of defects and must not be
+// silently reduced to one row per file.
+func TestHeatmapOnlyForHeatmapKind(t *testing.T) {
+	views := Build([]protocol.Finding{
+		{Tool: "brakeman", View: protocol.ViewPanel, Severity: "error", Path: "a.rb", StartLine: 1},
+	}, "")
+	if views[0].Files != nil {
+		t.Errorf("a panel should not carry heatmap rows, got %+v", views[0].Files)
+	}
+}
+
+func TestHeatmapCapsRows(t *testing.T) {
+	var fs []protocol.Finding
+	for i := 0; i < maxHeatFiles+25; i++ {
+		fs = append(fs, fv(string(rune('a'+i%26))+string(rune('a'+i/26))+".rb", float64(i+1)))
+	}
+	views := Build(fs, "")
+	if got := len(views[0].Files); got != maxHeatFiles {
+		t.Errorf("heat rows = %d, want the cap of %d", got, maxHeatFiles)
+	}
+}

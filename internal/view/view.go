@@ -28,6 +28,25 @@ type View struct {
 	// Counts summarise the findings by severity so a switcher can show weight
 	// without loading the whole list.
 	Counts Counts `json:"counts"`
+	// Files is set for heatmap views only: one row per file, ranked by its worst
+	// measurement. A heatmap is a measurement rather than a list of defects, and
+	// flog emits a score per method — 1,390 of them on Redmine — so the per-file
+	// aggregate is the readable unit. Computed here rather than in the template
+	// because it is data processing, and templates are bad at it.
+	Files []HeatFile `json:"files,omitempty"`
+}
+
+// HeatFile is one file's worth of a heatmap view.
+type HeatFile struct {
+	Path string `json:"path"`
+	// Peak is the highest value measured in the file, and what it is ranked by.
+	Peak float64 `json:"peak"`
+	// Entries is how many measurements the file contributed.
+	Entries int `json:"entries"`
+	// Pct is Peak as a percentage of the highest peak in the view, so the
+	// template can draw a bar without knowing the scale of the underlying
+	// metric — flog scores and coverage percentages are not comparable.
+	Pct int `json:"pct"`
 }
 
 // Provenance says who produced a view and against what.
@@ -114,6 +133,9 @@ func Build(findings []protocol.Finding, commit string) []View {
 				v.Counts.Info++
 			}
 		}
+		if v.Kind == protocol.ViewHeatmap {
+			v.Files = heatFiles(fs)
+		}
 		out = append(out, v)
 	}
 
@@ -128,6 +150,50 @@ func Build(findings []protocol.Finding, commit string) []View {
 		}
 		return a.ID < b.ID
 	})
+	return out
+}
+
+// maxHeatFiles bounds a heatmap table. The tail of a complexity ranking is
+// every ordinary method in the repository, which is a map of nothing; each
+// file's own page carries its full scores regardless.
+const maxHeatFiles = 60
+
+// heatFiles aggregates a heatmap view's findings to one row per file, ranked by
+// the worst measurement in each.
+func heatFiles(fs []protocol.Finding) []HeatFile {
+	peak := map[string]float64{}
+	count := map[string]int{}
+	for _, f := range fs {
+		count[f.Path]++
+		if f.Value != nil && *f.Value > peak[f.Path] {
+			peak[f.Path] = *f.Value
+		}
+	}
+	out := make([]HeatFile, 0, len(peak))
+	for p, v := range peak {
+		out = append(out, HeatFile{Path: p, Peak: v, Entries: count[p]})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Peak != out[j].Peak {
+			return out[i].Peak > out[j].Peak
+		}
+		return out[i].Path < out[j].Path
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	// Bars are relative to the view's own ceiling: a flog score and a coverage
+	// percentage share no scale, so an absolute one would be meaningless.
+	ceiling := out[0].Peak
+	if ceiling <= 0 {
+		ceiling = 1
+	}
+	for i := range out {
+		out[i].Pct = int(out[i].Peak / ceiling * 100)
+	}
+	if len(out) > maxHeatFiles {
+		out = out[:maxHeatFiles]
+	}
 	return out
 }
 

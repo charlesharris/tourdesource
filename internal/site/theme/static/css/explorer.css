@@ -310,3 +310,7 @@ html, body { height: 100%; }
 .view-prov { font-size: 11px; margin: var(--space-1) 0 var(--space-4); }
 .finding-table td { vertical-align: top; font-size: 13px; }
 .finding-table td:last-child { color: var(--color-neutral-700); }
+.heat { height: 8px; background: var(--color-neutral-200); border-radius: 2px; overflow: hidden; min-width: 120px; }
+.heat > span { display: block; height: 100%; background: var(--color-accent); }
+.heat-table td { vertical-align: middle; font-size: 13px; }
+.view-more { font-size: 11px; margin-top: var(--space-2); }
