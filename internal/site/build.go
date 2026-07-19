@@ -16,6 +16,7 @@ import (
 
 	"github.com/charlesharris/tourdesource/internal/protocol"
 	"github.com/charlesharris/tourdesource/internal/store"
+	"github.com/charlesharris/tourdesource/internal/view"
 )
 
 //go:embed all:theme
@@ -53,6 +54,8 @@ type Result struct {
 	Pages       int
 	Subsystems  int
 	Symbols     int
+	Views       int
+	Findings    int
 	TourStops   int
 	HugoVersion string
 }
@@ -218,6 +221,10 @@ func writeData(in Input, dir string, opts Options) (*Result, error) {
 	manifestJSON := buildManifest(in, subs, columnsFor(subs), derivation)
 	tour := buildTour(in.Manifest)
 	symbols := buildSymbols(in, subsystemOf, refs, opts.MaxSymbols)
+	// Views are derived from the findings already in the store, so what the
+	// site shows is exactly what `tds analyze` recorded at this commit.
+	views := view.Build(in.Findings, in.Commit)
+	findingsByPath := view.ByPath(views)
 
 	dataDir := filepath.Join(dir, "data")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
@@ -227,13 +234,14 @@ func writeData(in Input, dir string, opts Options) (*Result, error) {
 		"manifest.json": manifestJSON,
 		"tour.json":     tour,
 		"symbols.json":  symbols,
+		"views.json":    SiteViews{Views: views},
 	} {
 		if err := os.WriteFile(filepath.Join(dataDir, name), mustJSON(payload), 0o644); err != nil {
 			return nil, fmt.Errorf("writing data/%s: %w", name, err)
 		}
 	}
 
-	pages, err := writeFilePages(in, dir, subsystemOf, importedBy, tour)
+	pages, err := writeFilePages(in, dir, subsystemOf, importedBy, tour, findingsByPath)
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +251,8 @@ func writeData(in Input, dir string, opts Options) (*Result, error) {
 	return &Result{
 		Pages:      pages,
 		Subsystems: len(subs),
+		Views:      len(views),
+		Findings:   len(in.Findings),
 		Symbols:    len(symbols.Symbols),
 		TourStops:  stops,
 	}, nil
@@ -254,6 +264,7 @@ func writeFilePages(
 	subsystemOf map[string]string,
 	importedBy map[string][]string,
 	tour SiteTour,
+	findingsByPath map[string][]protocol.Finding,
 ) (int, error) {
 	filesDir := filepath.Join(dir, "content", "files")
 	if err := os.MkdirAll(filesDir, 0o755); err != nil {
@@ -318,6 +329,7 @@ func writeFilePages(
 			Imports:    imps,
 			ImportedBy: importedBy[f.Path],
 			TourStops:  stopsByPath[f.Path],
+			Findings:   pageFindings(findingsByPath[f.Path]),
 			Code:       src,
 		}
 
@@ -373,6 +385,13 @@ func renderFrontmatter(p FilePage) []byte {
 	writeList(&b, "imports", p.Imports)
 	writeList(&b, "importedBy", p.ImportedBy)
 	writeList(&b, "tourStops", p.TourStops)
+	if len(p.Findings) > 0 {
+		b.WriteString("  findings:\n")
+		for _, f := range p.Findings {
+			fmt.Fprintf(&b, "    - line: %d\n      severity: %s\n      tool: %s\n      rule: %s\n      message: %s\n",
+				f.Line, yamlString(f.Severity), yamlString(f.Tool), yamlString(f.Rule), yamlString(f.Message))
+		}
+	}
 
 	// The literal block scalar keeps the source verbatim. Every line is indented
 	// under the key; blank lines stay blank so the indentation is not a lie.
@@ -425,4 +444,44 @@ func dedupe(in []string) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+// pageFindings reduces a file's findings to what its page renders, capped so one
+// pathological file cannot dominate the build. Worst first, then by line.
+func pageFindings(fs []protocol.Finding) []PageFinding {
+	if len(fs) == 0 {
+		return nil
+	}
+	const max = 50
+	ordered := append([]protocol.Finding(nil), fs...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		wi, wj := findingRank(ordered[i].Severity), findingRank(ordered[j].Severity)
+		if wi != wj {
+			return wi < wj
+		}
+		return ordered[i].StartLine < ordered[j].StartLine
+	})
+	if len(ordered) > max {
+		ordered = ordered[:max]
+	}
+	out := make([]PageFinding, 0, len(ordered))
+	for _, f := range ordered {
+		out = append(out, PageFinding{
+			Line: f.StartLine, Severity: f.Severity,
+			Tool: f.Tool, Rule: f.Rule, Message: f.Message,
+		})
+	}
+	return out
+}
+
+// findingRank orders severities worst-first for display.
+func findingRank(sev string) int {
+	switch strings.ToLower(sev) {
+	case "error", "critical", "high", "fatal":
+		return 0
+	case "warning", "medium", "warn":
+		return 1
+	default:
+		return 2
+	}
 }

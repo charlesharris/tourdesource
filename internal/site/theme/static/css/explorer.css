@@ -279,3 +279,34 @@ html, body { height: 100%; }
 .palette-item .p-meta { margin-left: auto; font-family: var(--font-mono); font-size: 11.5px; color: var(--color-neutral-600); }
 .palette-item.is-active, .palette-item:hover { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
 .palette-empty { padding: var(--space-6); text-align: center; color: var(--color-neutral-600); font-size: 14px; }
+
+/* ── Findings (analyzer views) ──────────────────────────────────────────── */
+/* Severity is carried by a label, not by colour alone: the palette is warm and
+   low-contrast by design, and colour-only encoding fails for a good number of
+   readers regardless. */
+.sev { display: inline-block; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.03em;
+  padding: 2px 7px; border-radius: var(--radius-sm); border: 1px solid transparent; white-space: nowrap; }
+.sev-error { color: #7a2118; background: #fbeae7; border-color: #e7bdb5; }
+.sev-warning { color: var(--color-accent-800); background: var(--color-accent-100); border-color: var(--color-accent-300); }
+.sev-info { color: var(--color-neutral-700); background: var(--color-neutral-100); border-color: var(--color-neutral-300); }
+
+.count { font-size: 11px; color: var(--color-neutral-500); font-weight: normal; }
+
+.finding-list { list-style: none; margin: 0; padding: 0; }
+.finding { display: flex; gap: var(--space-3); padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-divider); font-size: 13px; }
+.finding:last-child { border-bottom: 0; }
+.finding-line { flex: none; color: var(--color-accent-700); text-decoration: none; font-size: 11px;
+  padding-top: 2px; min-width: 3ch; text-align: right; }
+.finding-rule { font-size: 11px; color: var(--color-neutral-600); margin-bottom: 2px; }
+.finding-msg { color: var(--color-neutral-800); line-height: 1.45; }
+.finding-error .finding-line { color: #7a2118; font-weight: 600; }
+
+.page-findings .view { margin-bottom: var(--space-8); }
+.view-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4);
+  flex-wrap: wrap; }
+.view-head h3 { margin: 0; }
+.view-counts { display: flex; gap: var(--space-2); }
+.view-prov { font-size: 11px; margin: var(--space-1) 0 var(--space-4); }
+.finding-table td { vertical-align: top; font-size: 13px; }
+.finding-table td:last-child { color: var(--color-neutral-700); }

@@ -63,6 +63,12 @@ func LoadInput(opts FromMapOptions) (Input, error) {
 	if err != nil {
 		return Input{}, err
 	}
+	// Findings are optional: a repo that has never been analyzed still builds,
+	// it just ships no views.
+	findings, err := st.Findings()
+	if err != nil {
+		return Input{}, fmt.Errorf("reading findings: %w", err)
+	}
 	entrypoints, err := st.Entrypoints()
 	if err != nil {
 		return Input{}, err
@@ -134,6 +140,7 @@ func LoadInput(opts FromMapOptions) (Input, error) {
 		Imports:     imports,
 		Signals:     signals,
 		Entrypoints: entrypoints,
+		Findings:    findings,
 		Source:      source,
 		ProjectName: filepath.Base(repo),
 		Blurb:       blurbFrom(m),

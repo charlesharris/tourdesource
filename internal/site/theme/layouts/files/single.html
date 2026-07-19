@@ -25,6 +25,24 @@
     <h6>What this file is</h6>
     <p class="card-body">{{ .Params.summary }}</p>
 
+    {{/* Analyzer findings for this file. Tool output, attributed — never
+         presented as a verdict on the code. */}}
+    {{ with .Params.findings }}
+    <div class="hr"></div>
+    <h6>Findings <span class="count mono">{{ len . }}</span></h6>
+    <ul class="finding-list">
+      {{ range . }}
+      <li class="finding finding-{{ .severity | lower }}">
+        <a class="finding-line mono" href="#L{{ .line }}">{{ .line }}</a>
+        <div class="finding-body">
+          <div class="finding-rule mono">{{ .tool }} · {{ .rule }}</div>
+          <div class="finding-msg">{{ .message }}</div>
+        </div>
+      </li>
+      {{ end }}
+    </ul>
+    {{ end }}
+
     {{ with .Params.symbols }}
     <div class="hr"></div>
     <h6>Symbols</h6>

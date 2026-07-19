@@ -21,6 +21,7 @@ import (
 	"github.com/charlesharris/tourdesource/internal/manifest"
 	"github.com/charlesharris/tourdesource/internal/protocol"
 	"github.com/charlesharris/tourdesource/internal/store"
+	"github.com/charlesharris/tourdesource/internal/view"
 )
 
 // --- the theme's data contract ---
@@ -120,6 +121,15 @@ type StopAnchor struct {
 	Reason   string `json:"reason,omitempty"` // why unresolved
 }
 
+// SiteViews is data/views.json: the analyzer layers this build ships.
+//
+// Every view carries its own provenance, so a reader can tell which tool at
+// which version made a claim, at which commit. A finding without that is an
+// anonymous accusation.
+type SiteViews struct {
+	Views []view.View `json:"views"`
+}
+
 // SiteSymbols is data/symbols.json.
 type SiteSymbols struct {
 	Symbols []SiteSymbol `json:"symbols"`
@@ -136,21 +146,32 @@ type SiteSymbol struct {
 
 // FilePage is the frontmatter of one content/files/<slug>.md.
 type FilePage struct {
-	Title      string       `yaml:"title"`
-	Path       string       `yaml:"path"` // canonical repo path — the join key
-	Folder     string       `yaml:"folder"`
-	Lang       string       `yaml:"lang"`
-	Lines      int          `yaml:"lines"`
-	Commits    int          `yaml:"commits"`
-	Touched    string       `yaml:"touched"`
-	Subsystem  string       `yaml:"subsystem"`
-	HL         string       `yaml:"hl"`
-	Summary    string       `yaml:"summary"`
-	Symbols    []PageSymbol `yaml:"symbols"`
-	Imports    []string     `yaml:"imports"`
-	ImportedBy []string     `yaml:"importedBy"`
-	TourStops  []string     `yaml:"tourStops"`
-	Code       string       `yaml:"code"`
+	Title      string        `yaml:"title"`
+	Path       string        `yaml:"path"` // canonical repo path — the join key
+	Folder     string        `yaml:"folder"`
+	Lang       string        `yaml:"lang"`
+	Lines      int           `yaml:"lines"`
+	Commits    int           `yaml:"commits"`
+	Touched    string        `yaml:"touched"`
+	Subsystem  string        `yaml:"subsystem"`
+	HL         string        `yaml:"hl"`
+	Summary    string        `yaml:"summary"`
+	Symbols    []PageSymbol  `yaml:"symbols"`
+	Imports    []string      `yaml:"imports"`
+	ImportedBy []string      `yaml:"importedBy"`
+	TourStops  []string      `yaml:"tourStops"`
+	Findings   []PageFinding `yaml:"findings"`
+	Code       string        `yaml:"code"`
+}
+
+// PageFinding is one analyzer finding on a file page, reduced to what the
+// template renders.
+type PageFinding struct {
+	Line     int    `yaml:"line"`
+	Severity string `yaml:"severity"`
+	Tool     string `yaml:"tool"`
+	Rule     string `yaml:"rule"`
+	Message  string `yaml:"message"`
 }
 
 type PageSymbol struct {
@@ -169,6 +190,8 @@ type Input struct {
 	Signals  []store.GitSignal
 	// Entrypoints let a subsystem name a representative entry file.
 	Entrypoints []protocol.Entrypoint
+	// Findings are analyzer output, empty when `tds analyze` has not been run.
+	Findings []protocol.Finding
 	// Source maps a repo path to its raw contents. Files absent here get a page
 	// without code rather than being dropped: the explorer should still show
 	// that they exist.

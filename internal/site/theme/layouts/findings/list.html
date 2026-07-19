@@ -1,0 +1,49 @@
+{{ define "main" }}
+{{ $v := site.Data.views }}
+<div class="page page-findings">
+  <h2>Findings</h2>
+
+  {{ if not $v.views }}
+  <p class="lede">No analyzers have run against this repository. Run <code>tds analyze</code>
+  before <code>tds build</code> to layer linter, security and type-checker output over the tour.</p>
+  {{ else }}
+  <p class="lede">What the analyzers reported, grouped by the tool that reported it.
+  This is tool output, not a verdict — a finding can be a false positive or a
+  deliberate choice, and nothing here has been reviewed by the tour's author.</p>
+
+  {{ range $v.views }}
+  <section class="view">
+    <div class="view-head">
+      <h3>{{ .title }}</h3>
+      <div class="view-counts mono">
+        {{ with .counts.errors }}<span class="sev sev-error">{{ . }} error{{ if ne . 1 }}s{{ end }}</span>{{ end }}
+        {{ with .counts.warnings }}<span class="sev sev-warning">{{ . }} warning{{ if ne . 1 }}s{{ end }}</span>{{ end }}
+        {{ with .counts.info }}<span class="sev sev-info">{{ . }} info</span>{{ end }}
+      </div>
+    </div>
+    {{/* Provenance: which tool, which version, which commit. A finding without
+         it is an anonymous accusation. */}}
+    <p class="view-prov mono text-muted">
+      {{ .provenance.tool }}{{ with .provenance.tool_version }} {{ . }}{{ end }}
+      {{ with .provenance.commit }} · @ {{ substr . 0 12 }}{{ end }}
+    </p>
+
+    <table class="table finding-table">
+      <thead><tr><th>File</th><th class="num">Line</th><th>Severity</th><th>Rule</th><th>Message</th></tr></thead>
+      <tbody>
+        {{ range .findings }}
+        <tr>
+          <td class="mono"><a class="link" href="{{ partial "fileurl" .path }}#L{{ .start_line }}">{{ .path }}</a></td>
+          <td class="num mono">{{ .start_line }}</td>
+          <td><span class="sev sev-{{ .severity | lower }}">{{ .severity }}</span></td>
+          <td class="mono">{{ .rule }}</td>
+          <td>{{ .message }}</td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+  </section>
+  {{ end }}
+  {{ end }}
+</div>
+{{ end }}

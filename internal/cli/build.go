@@ -70,6 +70,9 @@ func buildSite(cmd *cobra.Command, tourPath, repo, mapPath, outDir, projectDir s
 	fmt.Fprintf(out, "  subsystems:  %d\n", res.Subsystems)
 	fmt.Fprintf(out, "  symbols:     %d indexed\n", res.Symbols)
 	fmt.Fprintf(out, "  tour stops:  %d\n", res.TourStops)
+	if res.Views > 0 {
+		fmt.Fprintf(out, "  views:       %d (%d findings)\n", res.Views, res.Findings)
+	}
 	fmt.Fprintf(out, "  wrote:       %s\n", res.OutDir)
 	fmt.Fprintf(out, "\nOpen it:  %s\n", filepath.Join(res.OutDir, "index.html"))
 	return nil

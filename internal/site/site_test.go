@@ -495,6 +495,8 @@ func TestThemeIsEmbedded(t *testing.T) {
 		"theme/layouts/_default/baseof.html",
 		"theme/layouts/tour/list.html",
 		"theme/layouts/partials/tourstop.html",
+		"theme/layouts/findings/list.html",
+		"theme/content/findings/_index.md",
 		"theme/layouts/partials/tree.html",
 		"theme/static/css/classical.css",
 		"theme/static/js/app.js",

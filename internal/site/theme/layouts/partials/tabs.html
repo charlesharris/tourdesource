@@ -5,4 +5,7 @@
   <a class="tab {{ if eq $sec "files" }}is-active{{ end }}" href="{{ "/files/" | relURL }}">Explorer</a>
   <a class="tab {{ if eq $sec "tour" }}is-active{{ end }}" href="{{ "/tour/" | relURL }}">Tour</a>
   <a class="tab {{ if eq $sec "symbols" }}is-active{{ end }}" href="{{ "/symbols/" | relURL }}">Symbols</a>
+  {{ with site.Data.views.views }}
+  <a class="tab {{ if eq $sec "findings" }}is-active{{ end }}" href="{{ "/findings/" | relURL }}">Findings</a>
+  {{ end }}
 </nav>
