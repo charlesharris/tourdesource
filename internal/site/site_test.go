@@ -196,6 +196,11 @@ func TestUnresolvedAnchorHasNoHighlight(t *testing.T) {
 // TestSubsystemsGroupByRole covers the deterministic half of TDS-59.
 func TestSubsystemsGroupByRole(t *testing.T) {
 	files := []store.File{
+		// Markers: roles are only claimed for a layout that was actually
+		// detected, so a Rails-shaped tree with no Gemfile is not assumed to be
+		// Rails (TDS-74).
+		{Path: "Gemfile", Language: "ruby"},
+		{Path: "config/routes.rb", Language: "ruby"},
 		{Path: "app/controllers/issues_controller.rb", Language: "ruby"},
 		{Path: "app/controllers/projects_controller.rb", Language: "ruby"},
 		{Path: "app/models/issue.rb", Language: "ruby"},
@@ -346,6 +351,8 @@ func TestGenericDerivationGroupsByDirectory(t *testing.T) {
 // up directory-shaped guesses alongside its real roles.
 func TestConventionWinsOverGeneric(t *testing.T) {
 	files := []store.File{
+		{Path: "Gemfile", Language: "ruby"},
+		{Path: "config/routes.rb", Language: "ruby"},
 		{Path: "app/controllers/issues_controller.rb", Language: "ruby"},
 		{Path: "app/models/issue.rb", Language: "ruby"},
 		{Path: "script/oddball.rb", Language: "ruby"}, // matches no convention
@@ -365,14 +372,24 @@ func TestConventionWinsOverGeneric(t *testing.T) {
 // TestLibIsSharedDomain covers TDS-70: lib/ is a project's own shared code, and
 // filing it under Infrastructure buried Redmine's second largest body of
 // domain logic.
+// The rule now lives in the ruby lens, inherited by rails (TDS-74), so this
+// asserts it end to end through the derivation rather than through a helper.
 func TestLibIsSharedDomain(t *testing.T) {
-	col, name, ok := roleFor("lib/redmine/access_control.rb")
-	if !ok || name != "Library" {
-		t.Fatalf("roleFor(lib/...) = %q, %q, %v", col, name, ok)
+	files := []store.File{
+		{Path: "Gemfile", Language: "ruby"},
+		{Path: "config/routes.rb", Language: "ruby"},
+		{Path: "lib/redmine/access_control.rb", Language: "ruby"},
 	}
-	if col != ColDomain {
-		t.Errorf("lib/ column = %q, want %q", col, ColDomain)
+	subs, _, _ := DeriveSubsystems(files, nil, nil, nil, nil)
+	for _, s := range subs {
+		if s.Name == "Library" {
+			if s.Column != ColDomain {
+				t.Errorf("lib/ column = %q, want %q", s.Column, ColDomain)
+			}
+			return
+		}
 	}
+	t.Fatalf("no Library subsystem derived; got %+v", subs)
 }
 
 func TestSymbolIndexRanksContainersFirst(t *testing.T) {

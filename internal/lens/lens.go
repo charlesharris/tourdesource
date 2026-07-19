@@ -184,14 +184,17 @@ func (l *Lens) RoleFor(rel string) (column, name string, ok bool) {
 	if l.IsIgnored(rel) {
 		return "", "", false
 	}
-	best := -1
+	best, bestLen := -1, -2
 	for i, r := range l.Roles {
 		rp := strings.TrimSuffix(r.Path, "/")
-		if rel != rp && !strings.HasPrefix(rel, rp+"/") {
+		n := roleSpecificity(rp, rel)
+		if n < 0 || n < bestLen {
 			continue
 		}
-		if best < 0 || len(rp) >= len(strings.TrimSuffix(l.Roles[best].Path, "/")) {
-			best = i
+		// Ties go to the later rule, which is what lets a lens override the one
+		// it extends.
+		if n >= bestLen {
+			best, bestLen = i, n
 		}
 	}
 	if best < 0 {
@@ -199,15 +202,47 @@ func (l *Lens) RoleFor(rel string) (column, name string, ok bool) {
 	}
 	r := l.Roles[best]
 	if r.PerSegment {
-		// One node per child directory: app/services/billing -> "billing".
-		rp := strings.TrimSuffix(r.Path, "/")
-		rest := strings.TrimPrefix(strings.TrimPrefix(rel, rp), "/")
-		seg, _, _ := strings.Cut(rest, "/")
-		if seg == "" || !strings.Contains(rest, "/") {
-			// A file directly inside the container, not in a package under it.
-			seg = path.Base(rp)
-		}
-		return r.Column, seg, true
+		return r.Column, perSegmentName(strings.TrimSuffix(r.Path, "/"), rel), true
 	}
 	return r.Column, r.Name, true
+}
+
+// roleSpecificity scores how well a role path matches, or -1 for no match.
+// Longer prefixes are more specific; "*" is the catch-all and always loses to a
+// real prefix; "." matches only files sitting directly at the lens root.
+func roleSpecificity(rolePath, rel string) int {
+	switch rolePath {
+	case "*":
+		return 0
+	case ".", "":
+		if strings.Contains(rel, "/") {
+			return -1
+		}
+		return 1
+	}
+	if rel != rolePath && !strings.HasPrefix(rel, rolePath+"/") {
+		return -1
+	}
+	return len(rolePath) + 1
+}
+
+// perSegmentName names one node per child of a container directory.
+//
+// The name is the child's full path, not its last segment: `internal/site` and
+// `pkg/site` are different packages, and naming both "site" would silently merge
+// them into one subsystem.
+func perSegmentName(rolePath, rel string) string {
+	dir := path.Dir(rel)
+	if dir == "." {
+		dir = ""
+	}
+	depth := 1
+	if rolePath != "*" && rolePath != "." && rolePath != "" {
+		depth = strings.Count(rolePath, "/") + 2
+	}
+	parts := strings.Split(dir, "/")
+	if len(parts) > depth {
+		parts = parts[:depth]
+	}
+	return strings.Join(parts, "/")
 }

@@ -13,6 +13,8 @@ path = "lib"
 column = "domain"
 name = "Library"
 
+# A gem is lib/ plus its executables. Omitting these leaves a provider's own
+# entry point unplaced, which is how the gap was noticed.
 [[lens.ruby.role]]
 path = "exe"
 column = "entry"

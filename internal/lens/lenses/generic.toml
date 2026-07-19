@@ -16,6 +16,19 @@ ignore = [
   "vendor/", "node_modules/", "third_party/",
 ]
 
+# A file sitting at the repository root — main.go, setup.py.
+[[lens.generic.role]]
+path = "."
+column = "entry"
+name = "(root)"
+
+# Catch-all: any other top-level directory is its own module. Always loses to a
+# more specific rule below.
+[[lens.generic.role]]
+path = "*"
+column = "modules"
+per-segment = true
+
 [[lens.generic.role]]
 path = "cmd"
 column = "entry"

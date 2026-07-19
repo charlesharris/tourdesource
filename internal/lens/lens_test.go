@@ -61,19 +61,53 @@ func TestPerSegmentNamesEachChild(t *testing.T) {
 	set := builtins(t)
 	g, _ := set.Get("generic")
 
+	// The name is the child's full path, not its last segment: internal/site and
+	// pkg/site are different packages and must not merge into one node.
 	col, name, ok := g.RoleFor("internal/site/data.go")
-	if !ok || name != "site" {
-		t.Errorf("internal/site/data.go = %q %q %v, want a node named \"site\"", col, name, ok)
+	if !ok || name != "internal/site" {
+		t.Errorf("internal/site/data.go = %q %q %v, want \"internal/site\"", col, name, ok)
 	}
 	if col != ColumnModules {
 		t.Errorf("column = %q, want %q — no role was derived for a Go package", col, ColumnModules)
 	}
-	if _, name, _ := g.RoleFor("internal/cli/build.go"); name != "cli" {
+	if _, name, _ := g.RoleFor("internal/cli/build.go"); name != "internal/cli" {
 		t.Errorf("sibling package should be its own node, got %q", name)
+	}
+	if _, a, _ := g.RoleFor("internal/site/x.go"); a != "internal/site" {
+		t.Errorf("deeper files stay in their package, got %q", a)
 	}
 	// A file sitting directly in the container, not in a package under it.
 	if _, name, ok := g.RoleFor("internal/doc.go"); !ok || name != "internal" {
 		t.Errorf("internal/doc.go = %q %v, want the container itself", name, ok)
+	}
+}
+
+// TestPerSegmentNamesDoNotCollide is why per-segment uses the full path.
+func TestPerSegmentNamesDoNotCollide(t *testing.T) {
+	set := builtins(t)
+	g, _ := set.Get("generic")
+	_, a, _ := g.RoleFor("internal/site/a.go")
+	_, b, _ := g.RoleFor("pkg/site/b.go")
+	if a == b {
+		t.Fatalf("internal/site and pkg/site both named %q — they would merge into one subsystem", a)
+	}
+}
+
+// TestGenericCatchAllAndRoot covers the two rules that make the generic lens
+// total: a file at the repository root, and a directory no container rule names.
+func TestGenericCatchAllAndRoot(t *testing.T) {
+	set := builtins(t)
+	g, _ := set.Get("generic")
+
+	if col, name, ok := g.RoleFor("main.go"); !ok || name != "(root)" || col != ColumnEntry {
+		t.Errorf("main.go = %q %q %v, want the root entry point", col, name, ok)
+	}
+	if col, name, ok := g.RoleFor("handlers/thing.go"); !ok || name != "handlers" || col != ColumnModules {
+		t.Errorf("handlers/thing.go = %q %q %v, want a catch-all module node", col, name, ok)
+	}
+	// The catch-all must never beat a more specific container rule.
+	if _, name, _ := g.RoleFor("cmd/tds/main.go"); name != "cmd/tds" {
+		t.Errorf("cmd/ should win over the catch-all, got %q", name)
 	}
 }
 

@@ -3,8 +3,8 @@ package site
 import (
 	"fmt"
 	"sort"
-	"strings"
 
+	"github.com/charlesharris/tourdesource/internal/lens"
 	"github.com/charlesharris/tourdesource/internal/protocol"
 	"github.com/charlesharris/tourdesource/internal/store"
 )
@@ -44,47 +44,6 @@ const (
 	DerivationDirectory  = "directory"  // fallback: grouped by directory shape
 )
 
-// containerDirs hold modules rather than being one themselves: grouping all of
-// `internal/` as a single node would produce one blob where a Go developer sees
-// fifteen packages.
-var containerDirs = map[string]bool{
-	"internal": true, "pkg": true, "src": true, "lib": true, "libs": true,
-	"packages": true, "apps": true, "modules": true, "services": true,
-	"components": true, "crates": true, "providers": true, "cmd": true,
-}
-
-// genericGroup names the subsystem a path belongs to when no convention applies:
-// its directory, descending one level into container directories.
-//
-// This is the honest floor — structure is all we have, so structure is all it
-// claims. Every future lens degrades to this when its markers are absent.
-func genericGroup(path string) (name string, ok bool) {
-	if notArchitecture(path) {
-		return "", false
-	}
-	parts := strings.Split(path, "/")
-	switch {
-	case len(parts) == 1:
-		// A file at the repo root — main.go, setup.py.
-		return "(root)", true
-	case containerDirs[parts[0]] && len(parts) > 2:
-		return parts[0] + "/" + parts[1], true
-	default:
-		return parts[0], true
-	}
-}
-
-// genericColumn places a generic group. Only entry points are claimed, because
-// `cmd/` and a root main file are near-universal and unambiguous; everything
-// else stays in the unlabelled Modules column.
-func genericColumn(name string) string {
-	if name == "(root)" || name == "cmd" || strings.HasPrefix(name, "cmd/") ||
-		name == "bin" || strings.HasPrefix(name, "bin/") {
-		return ColEntry
-	}
-	return ColModules
-}
-
 // columnsFor returns the columns that actually hold a subsystem, in fixed
 // left-to-right order.
 //
@@ -107,76 +66,33 @@ func columnsFor(subs []Subsystem) []string {
 	return out
 }
 
-// dirRole maps a directory prefix to the column its files belong in, and a
-// readable name. Longest prefix wins, so `app/models/concerns` can be placed
-// differently from `app/models`.
-var dirRoles = []struct {
-	prefix string
-	column string
-	name   string
-}{
-	{"app/controllers", ColEntry, "Controllers"},
-	{"app/api", ColEntry, "API"},
-	{"config/routes", ColEntry, "Routing"},
-	{"app/models", ColDomain, "Domain models"},
-	{"app/validators", ColDomain, "Validators"},
-	{"app/services", ColFeature, "Services"},
-	{"app/queries", ColFeature, "Queries"},
-	{"app/operations", ColFeature, "Operations"},
-	{"app/interactors", ColFeature, "Interactors"},
-	{"app/policies", ColFeature, "Policies"},
-	{"app/forms", ColFeature, "Forms"},
-	{"app/presenters", ColFeature, "Presenters"},
-	{"app/serializers", ColFeature, "Serializers"},
-	{"app/decorators", ColFeature, "Decorators"},
-	{"app/jobs", ColInfra, "Background jobs"},
-	{"app/mailers", ColInfra, "Mailers"},
-	{"app/helpers", ColInfra, "View helpers"},
-	{"app/views", ColInfra, "Views"},
-	{"app/assets", ColInfra, "Assets"},
-	{"app/javascript", ColInfra, "Frontend"},
-	// lib/ is a project's own shared code, not plumbing it stands on: Redmine's
-	// lib/redmine holds access control, activity streams, field formats and the
-	// plugin hook system. Filing it under Infrastructure buried the second
-	// largest body of domain logic in the repo.
-	{"lib", ColDomain, "Library"},
-	{"config", ColInfra, "Configuration"},
-	{"db", ColInfra, "Database"},
-	{"public", ColInfra, "Static assets"},
-	{"extra", ColInfra, "Extras"},
+// lensFor picks the lens governing a path, falling back to generic when no
+// marker claimed it. A repository that matched nothing still gets an
+// architecture map derived from its structure.
+func lensFor(set *lens.Set, instances []lens.Instance, p string) (*lens.Lens, bool) {
+	if set == nil {
+		return nil, false
+	}
+	if in, ok := lens.Resolve(instances, p); ok {
+		return in.Lens, true
+	}
+	return set.Get(lens.Generic)
 }
 
-// notArchitecture reports whether a path describes the system rather than
-// composing it. Excluded from every derivation, conventional or generic:
-// including tests buries the real subsystems under the largest directories in
-// the repo.
-func notArchitecture(path string) bool {
-	for _, skip := range []string{"test/", "tests/", "spec/", "doc/", "docs/", "vendor/", "node_modules/", "third_party/"} {
-		if strings.HasPrefix(path, skip) {
-			return true
-		}
+// siteColumn maps a lens column onto the heading the theme displays.
+func siteColumn(c string) string {
+	switch c {
+	case lens.ColumnEntry:
+		return ColEntry
+	case lens.ColumnFeature:
+		return ColFeature
+	case lens.ColumnDomain:
+		return ColDomain
+	case lens.ColumnInfra:
+		return ColInfra
+	default:
+		return ColModules
 	}
-	return false
-}
-
-// roleFor returns the column and display name for a path, or ok=false when no
-// convention matches it.
-func roleFor(path string) (column, name string, ok bool) {
-	if notArchitecture(path) {
-		return "", "", false
-	}
-	best := -1
-	for i, r := range dirRoles {
-		if strings.HasPrefix(path, r.prefix+"/") || path == r.prefix {
-			if best < 0 || len(r.prefix) > len(dirRoles[best].prefix) {
-				best = i
-			}
-		}
-	}
-	if best < 0 {
-		return "", "", false
-	}
-	return dirRoles[best].column, dirRoles[best].name, true
 }
 
 // DeriveSubsystems groups the mapped files into architecture nodes. The third
@@ -222,28 +138,52 @@ func DeriveSubsystems(
 		subsystemOf[path] = name
 	}
 
+	// Which lens governs each file. Detection is scoped, so a repository can be
+	// several kinds of project at once (docs/lenses.md).
+	paths := make([]string, 0, len(files))
+	for _, f := range files {
+		paths = append(paths, f.Path)
+	}
+	set, err := lens.Builtins()
+	if err != nil {
+		// Embedded data failing to parse is a build-time mistake, not something
+		// a user can act on; fall back to structure rather than failing a tour.
+		set = nil
+	}
+	var instances []lens.Instance
+	if set != nil {
+		instances = lens.Detect(set, paths)
+	}
+
 	for _, f := range code {
-		column, name, ok := roleFor(f.Path)
+		l, ok := lensFor(set, instances, f.Path)
 		if !ok {
 			continue
 		}
-		add(name, column, f.Path, groups[name])
+		rel, root := f.Path, ""
+		if in, found := lens.Resolve(instances, f.Path); found {
+			rel, root = in.Rel(f.Path), in.Root
+		}
+		col, name, ok := l.RoleFor(rel)
+		if !ok {
+			continue
+		}
+		// A scoped instance names its subsystems relative to itself, so two
+		// Ruby components in one repo both produce "Library". Qualify anything
+		// off the repository root, or they silently merge into one node.
+		if root != "" {
+			name = root + ": " + name
+		}
+		add(name, siteColumn(col), f.Path, groups[name])
 	}
 
-	// Fall back for the whole repo rather than per file: mixing a couple of
-	// convention hits with directory guesses for everything else would read as
-	// one derivation when it is two. Either a layout was recognised or it was
-	// not (TDS-67; the lens work generalises this).
-	derivation := DerivationConvention
-	if len(groups) == 0 {
-		derivation = DerivationDirectory
-		for _, f := range code {
-			name, ok := genericGroup(f.Path)
-			if !ok {
-				continue
-			}
-			add(name, genericColumn(name), f.Path, groups[name])
-		}
+	// The derivation describes the repository, so it is decided by what governs
+	// the root. A Go project containing one vendored Ruby gem is still a Go
+	// project, and reporting "convention" because a nested marker matched would
+	// claim an understanding of the whole that nobody has.
+	derivation := DerivationDirectory
+	if in, ok := lens.Resolve(instances, "."); ok && in.Root == "" {
+		derivation = DerivationConvention
 	}
 
 	// Dependencies: lift the map's file-level import edges to the group level.
