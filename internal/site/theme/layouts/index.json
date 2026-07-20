@@ -1,14 +1,26 @@
+{{- /* The palette/tree search index.
+
+     URLs here are relative to the SITE ROOT, with no leading slash — app.js
+     joins them against the base it derives from <link rel="tds-index">.
+     They cannot be root-absolute: `relativeURLs` rewrites URLs in HTML output
+     but not in the JSON output format, so a root-absolute path here would be
+     the one artifact that assumes the site is hosted at a domain root, and
+     every result would 404 under example.com/tours/<repo>/ (TDS-68). */ -}}
+{{- $base := "" | relURL -}}
 {{- $out := slice -}}
 {{- range (where site.RegularPages "Section" "files").ByParam "path" -}}
-  {{- $out = $out | append (dict "type" "File" "title" .Params.path "url" .RelPermalink "meta" (printf "%d lines" .Params.lines)) -}}
+  {{- $u := strings.TrimPrefix $base .RelPermalink -}}
+  {{- $out = $out | append (dict "type" "File" "title" .Params.path "url" $u "meta" (printf "%d lines" .Params.lines)) -}}
 {{- end -}}
 {{- range site.Data.symbols.symbols -}}
-  {{- $out = $out | append (dict "type" "Symbol" "title" .name "url" (partial "fileurl" .file) "meta" .kind) -}}
+  {{- $u := strings.TrimPrefix $base (partial "fileurl" .file) -}}
+  {{- $out = $out | append (dict "type" "Symbol" "title" .name "url" $u "meta" .kind) -}}
 {{- end -}}
 {{- range site.Data.tour.chapters -}}
   {{- $ch := .title -}}
   {{- range .stops -}}
-    {{- $out = $out | append (dict "type" "Tour" "title" .loc "url" (printf "%s#%s" ("tour/" | relURL) .id) "meta" $ch) -}}
+    {{- $u := printf "%s#%s" (strings.TrimPrefix $base ("tour/" | relURL)) .id -}}
+    {{- $out = $out | append (dict "type" "Tour" "title" .loc "url" $u "meta" $ch) -}}
   {{- end -}}
 {{- end -}}
 {{- $out | jsonify -}}

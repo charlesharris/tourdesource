@@ -5,13 +5,13 @@
   <p class="lede">{{ len $s.symbols }} classes, modules and methods across the codebase. Filter, or click a row to open its file.</p>
   <input class="input sym-filter" type="text" placeholder="Filter symbols…" data-sym-filter autocomplete="off">
   <table class="table sym-table">
-    <thead><tr><th>Symbol</th><th>Kind</th><th>Summary</th><th>Subsystem</th><th class="num">Refs</th></tr></thead>
+    <thead><tr><th>Symbol</th><th>Kind</th><th>File</th><th>Subsystem</th><th class="num">Refs</th></tr></thead>
     <tbody>
       {{ range $s.symbols }}
       <tr class="row-link" data-sym-row onclick="location.href='{{ partial "fileurl" .file }}'">
         <td class="mono sym-name">{{ .name }}</td>
         <td class="mono sym-kind-cell">{{ .kind }}</td>
-        <td class="text-muted">{{ .summary }}</td>
+        <td class="mono text-muted sym-file">{{ .file }}</td>
         <td>{{ .subsystem }}</td>
         <td class="num mono">{{ .refs }}</td>
       </tr>

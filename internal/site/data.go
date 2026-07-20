@@ -163,13 +163,16 @@ type SiteSymbols struct {
 	Symbols []SiteSymbol `json:"symbols"`
 }
 
+// SiteSymbol is one row of the symbol index. File is rendered, not just
+// carried for the row link: the same qualified name is often reopened in
+// several files (Rails config and initializers especially), and without the
+// definition site those rows are indistinguishable from a rendering bug.
 type SiteSymbol struct {
 	Name      string `json:"name"`
 	Kind      string `json:"kind"`
 	File      string `json:"file"`
 	Subsystem string `json:"subsystem"`
 	Refs      int    `json:"refs"`
-	Summary   string `json:"summary"`
 }
 
 // FilePage is the frontmatter of one content/files/<slug>.md.
@@ -375,7 +378,13 @@ func buildSymbols(in Input, subsystemOf map[string]string, refs map[string]int, 
 		if a.Refs != b.Refs {
 			return a.Refs > b.Refs
 		}
-		return a.Name < b.Name
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		// Same name in several files: order by definition site so the rows are
+		// stable across builds. Without this, which duplicate survives the
+		// `limit` truncation depends on provider emission order.
+		return a.File < b.File
 	})
 	if limit > 0 && len(out.Symbols) > limit {
 		out.Symbols = out.Symbols[:limit]

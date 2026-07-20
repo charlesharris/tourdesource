@@ -2,8 +2,19 @@
    No dependencies. Loaded with `defer` from baseof.html. */
 (function () {
   "use strict";
-  var body = document.body;
-  var idxUrl = body.getAttribute("data-index");
+  /* index.json stores URLs relative to the site root, because `relativeURLs`
+     rewrites HTML but not the JSON output format (TDS-68). The <link> in the
+     head is rewritten, and reading its .href property resolves it against the
+     current document — giving an absolute base that is correct at any depth and
+     under any subpath. */
+  var idxEl = document.querySelector('link[rel="tds-index"]');
+  var idxUrl = idxEl ? idxEl.href : null;
+  var SITE_ROOT = idxUrl ? idxUrl.replace(/index\.json([?#].*)?$/, "") : "";
+  function siteURL(u) {
+    if (!u) return u;
+    if (/^([a-z]+:)?\/\//i.test(u)) return u; // already absolute — leave alone
+    return SITE_ROOT + u.replace(/^\//, "");
+  }
   var palette = document.querySelector("[data-palette]");
   var input = palette && palette.querySelector("[data-palette-input]");
   var results = palette && palette.querySelector("[data-palette-results]");
@@ -22,7 +33,12 @@
     if (INDEX) return Promise.resolve(INDEX);
     if (!idxUrl) { INDEX = []; return Promise.resolve(INDEX); }
     return fetch(idxUrl).then(function (r) { return r.json(); })
-      .then(function (d) { INDEX = d; return d; })
+      .then(function (d) {
+        // Resolve once here so every consumer (palette, file tree) gets a
+        // URL that works wherever the site is hosted.
+        INDEX = (d || []).map(function (e) { e.url = siteURL(e.url); return e; });
+        return INDEX;
+      })
       .catch(function () { INDEX = []; return INDEX; });
   }
 

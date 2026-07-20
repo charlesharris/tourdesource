@@ -408,6 +408,27 @@ func TestSymbolIndexRanksContainersFirst(t *testing.T) {
 	}
 }
 
+// A constant reopened in several files yields rows identical in every column
+// but the file, so the file has to be carried and ordered — otherwise which
+// duplicate survives truncation depends on provider emission order.
+func TestSymbolIndexDistinguishesReopenedConstants(t *testing.T) {
+	in := Input{Symbols: []protocol.Symbol{
+		{Symbol: "ActionController", Kind: "module", Path: "config/initializers/z.rb"},
+		{Symbol: "ActionController", Kind: "module", Path: "config/application.rb"},
+	}}
+	got := buildSymbols(in, map[string]string{}, map[string]int{}, 0).Symbols
+
+	if len(got) != 2 {
+		t.Fatalf("indexed %d symbols, want both definition sites", len(got))
+	}
+	if got[0].File == got[1].File {
+		t.Errorf("both rows report file %q — the rows are indistinguishable", got[0].File)
+	}
+	if got[0].File != "config/application.rb" {
+		t.Errorf("same-name rows should order by file, got %q first", got[0].File)
+	}
+}
+
 func TestSymbolIndexIsBounded(t *testing.T) {
 	var syms []protocol.Symbol
 	for i := 0; i < 100; i++ {

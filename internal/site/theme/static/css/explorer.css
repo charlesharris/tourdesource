@@ -261,6 +261,9 @@ html, body { height: 100%; }
 .num { text-align: right; }
 .sym-name { font-weight: 500; }
 .sym-kind-cell { color: var(--color-accent-700); }
+/* Wrap rather than truncate: what distinguishes two rows for a reopened
+   constant is usually the tail of the path, which any ellipsis would eat. */
+.sym-file { max-width: 32ch; overflow-wrap: anywhere; }
 .file-table td, .sym-table td { font-size: 13px; }
 
 /* ── Command palette ────────────────────────────────────────────────────── */

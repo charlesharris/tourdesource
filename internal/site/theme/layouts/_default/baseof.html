@@ -2,8 +2,14 @@
 <html lang="en">
 <head>
   {{ partial "head.html" . }}
+  {{- /* The search index's location, carried in an href because `relativeURLs`
+         rewrites href/src but NOT custom data-* attributes — a data-index would
+         stay root-absolute and 404 under a subpath (TDS-68). app.js reads the
+         .href property, which the browser resolves to an absolute URL, and uses
+         it as the base for every root-relative URL inside index.json. */ -}}
+  <link rel="tds-index" href="{{ "index.json" | relURL }}">
 </head>
-<body data-index="{{ "index.json" | relURL }}">
+<body>
   <div class="app">
     {{ partial "topbar.html" . }}
     {{ partial "tabs.html" . }}
