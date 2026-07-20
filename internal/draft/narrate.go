@@ -78,7 +78,7 @@ func (o NarrateOptions) withDefaults() NarrateOptions {
 		o.MaxExcerptLines = 120
 	}
 	if o.MaxFiles <= 0 {
-		o.MaxFiles = 250
+		o.MaxFiles = 200
 	}
 	if o.Logf == nil {
 		o.Logf = func(string, ...any) {}

@@ -19,8 +19,10 @@ func newRootCmd() *cobra.Command {
 shareable, interactive "tour" of the project — guided narration anchored to
 real code, compiled into a self-contained static site.
 
-The pipeline is a set of discrete stages:
+Start with ` + "`tds run`" + `, which does the whole pipeline in one go. The stages are
+also available individually:
 
+  run      map + analyze + draft + build, from bare repo to servable site
   map      build the structural index of a repo (via language providers)
   analyze  run language tooling (linters, types, coverage) into findings
   draft    generate a tour draft with AI assistance (curated by a human)
@@ -34,6 +36,7 @@ See docs/design.md and docs/implementation-plan.md for the full picture.`,
 	}
 
 	root.AddCommand(
+		newRunCmd(),
 		newMapCmd(),
 		newAnalyzeCmd(),
 		newDraftCmd(),

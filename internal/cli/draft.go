@@ -94,7 +94,7 @@ Run ` + "`tds map`" + ` first to produce the map.`,
 		"per-request budget for narration")
 	cmd.Flags().BoolVar(&fullNarration, "full-narration", false,
 		"also summarise the busiest files for the explorer (implies --narrate; hours on a large repo, cached by content hash)")
-	cmd.Flags().IntVar(&narrateFiles, "narrate-files", 250,
+	cmd.Flags().IntVar(&narrateFiles, "narrate-files", 200,
 		"how many files --full-narration describes, busiest first")
 	return cmd
 }
@@ -119,6 +119,14 @@ func printDraftSummary(cmd *cobra.Command, res *draft.Result) {
 	// contradicted the warning above it.
 	if res.NarrateRequested {
 		fmt.Fprintf(out, "  narrated:    %d of %d stops\n", res.Narrated, res.Stops)
+		// These land in the narration sidecar rather than the tour file, so
+		// without a line here a successful subsystem pass is invisible.
+		if res.Subsystems > 0 {
+			fmt.Fprintf(out, "  subsystems:  %d described\n", res.Subsystems)
+		}
+		if res.Summaries > 0 {
+			fmt.Fprintf(out, "  summaries:   %d files\n", res.Summaries)
+		}
 	}
 	fmt.Fprintf(out, "  wrote:       %s\n", res.Path)
 	if res.Narrated > 0 {

@@ -44,11 +44,12 @@ file-level import edges.
 
 ![The architecture map](docs/images/site-architecture.png)
 
-Grouping and every number here are measured, but the naming pass is not built
-yet, so subsystem descriptions still say what was counted rather than what the
-subsystem is for, and the role columns fill unevenly (see TDS-59, TDS-67).
-Inventing a subsystem's purpose is exactly the confident-but-wrong text the rest
-of the pipeline works to avoid, so it stays blank until it can be derived.
+Grouping and every number here are measured. The names and descriptions come
+from `tds draft --narrate`, which is asked only what each group is *for* — never
+which files are in it or how big it is, so narration cannot misreport the
+codebase. Without a narration pass the cards say what was counted rather than
+inventing a purpose, which is the confident-but-wrong text the rest of the
+pipeline works to avoid.
 
 ### Findings — your linters, layered over the tour
 
@@ -127,20 +128,45 @@ inside the project or from anywhere via an explicit path.
 
 ```sh
 cd ~/src/my-project
+tds run --serve                  # everything, then http://localhost:8000
+```
 
+That maps the repo, runs whatever linters you have installed, drafts and narrates
+a tour, and renders the site. On a large repository expect a handful of minutes,
+most of it narration.
+
+**Re-running is safe.** `tds run` refreshes the map, the findings and the site
+every time, but writes the tour only if there isn't one — so the curation you do
+in the next step is never overwritten. `--redraft` when you do want it thrown
+away and regenerated.
+
+```sh
+$EDITOR .tds/my-project.tour.md  # curate — the part only a human can do
+tds run --serve                  # rebuild the site from your edits
+```
+
+Narration needs **tmux** and **Claude Code** on your `PATH` and runs on your own
+subscription; `tds run` checks for them before doing any other work. Pass
+`--no-narrate` to skip it and get a site whose stops all read `TODO` — each one
+still carrying the evidence tds used to pick it, so you are editing rather than
+starting from a blank page.
+
+### Or run the stages yourself
+
+Each stage is independent and re-runnable, which is what `tds run` is composing:
+
+```sh
 tds map .                        # structural index: symbols, imports, git signals
 tds analyze .                    # optional: run your linters into findings
 tds draft . --narrate            # AI writes the first-draft prose (your subscription)
-$EDITOR .tds/my-project.tour.md  # curate — the part only a human can do
+$EDITOR .tds/my-project.tour.md  # curate
 tds build .tds/my-project.tour.md
 ```
 
 Then **serve it** (see below) and open <http://localhost:8000>.
 
-Each stage is independent and re-runnable. Skip `analyze` and you get the tour
-without the findings layer; skip `--narrate` and every stop carries a `TODO`
-plus the evidence tds used to pick it, so you are editing rather than starting
-from a blank page.
+Skip `analyze` and you get the tour without the findings layer; skip `--narrate`
+and every stop carries a `TODO`.
 
 `--narrate` needs **tmux** and **Claude Code** on your `PATH`; see
 [Drafting and narration](#drafting-and-narration) for the full loop, including
@@ -222,7 +248,7 @@ Useful flags:
 | `--narrate-workdir <dir>` | Keep the prompts and raw responses. **Without it they are written to a temp dir and deleted when the run ends**, so replay is impossible after the fact. |
 | `--narrate-timeout 20m` | Raise the per-request budget on a large repo (default 10m). |
 | `--full-narration` | Also summarise the busiest files, for the explorer's "What this file is" panel. See the note below — this is the slow one. |
-| `--narrate-files 500` | How many files `--full-narration` describes, busiest first (default 250). |
+| `--narrate-files 500` | How many files `--full-narration` describes, busiest first (default 200). |
 | `--landmarks 10` | Propose more landmark stops (default 6). |
 | `--audience "new backend engineers"` | Recorded in the frontmatter and given to the assistant as context. |
 
