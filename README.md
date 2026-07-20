@@ -103,6 +103,11 @@ Then head to the [Quickstart](#quickstart-tour-your-own-project).
 | **Go** | 1.25+ | building the core |
 | **Hugo** | extended 0.128+ | `tds build` (site rendering) — `brew install hugo` |
 | **Ruby** | 3.4+ | the Ruby/Rails provider (prism ships as a default gem) — optional; other languages degrade to line-range anchors |
+| **tmux** | any | `tds draft --narrate` only — the assistant is driven in a tmux pane |
+| **Claude Code** | any | `tds draft --narrate` only — runs on your subscription, no API key |
+
+Only `--narrate` needs the last two. Drafting without them still produces the
+full tour skeleton, with `TODO` prose for you to write.
 
 The **analyzers** (`tds analyze`) are the repo's own tools — `rubocop`,
 `brakeman`, `flog`, `simplecov`, `sorbet`. Each is availability-gated: whatever
@@ -136,6 +141,10 @@ Each stage is independent and re-runnable. Skip `analyze` and you get the tour
 without the findings layer; skip `--narrate` and every stop carries a `TODO`
 plus the evidence tds used to pick it, so you are editing rather than starting
 from a blank page.
+
+`--narrate` needs **tmux** and **Claude Code** on your `PATH`; see
+[Drafting and narration](#drafting-and-narration) for the full loop, including
+how to keep the assistant's responses so a draft can be replayed for free.
 
 Touring a repo you don't own, without dirtying its checkout? See
 [Touring a repository you don't own](#touring-a-repository-you-dont-own).
@@ -171,6 +180,8 @@ tds build .tds/my-project.tour.md --project-dir /tmp/tds-site --keep-project
 cd /tmp/tds-site && hugo server
 ```
 
+## Drafting and narration
+
 `tds draft` does the structural work — it ranks your entrypoints, landmarks and
 git hotspots, pours them into the onboarding template, and emits a `.tour.md`
 whose anchors all resolve. What it leaves you is the prose: every stop carries a
@@ -179,14 +190,38 @@ rather than starting from a blank page.
 
 ### Let an assistant write the first draft of the prose
 
+The whole narration loop, start to finish:
+
 ```sh
-tds draft . --narrate
+cd ~/src/my-project
+
+tds map .                                   # 1. structural index (required first)
+
+tds draft . --narrate \
+    --narrate-workdir .tds/narrate          # 2. assistant writes the prose
+
+$EDITOR .tds/my-project.tour.md             # 3. read it — this is a first draft
+tds build .tds/my-project.tour.md           # 4. compile the site
+cd .tds/site && python3 -m http.server 8000 # 5. open http://localhost:8000
 ```
 
 `--narrate` hands the finished skeleton to Claude Code — running in a tmux pane
 on **your own subscription**, no API key — along with the source each stop
 anchors, and asks only for prose. On Redmine that fills all 19 stops in two
 requests, in about a minute.
+
+Useful flags:
+
+| Flag | Why |
+|---|---|
+| `--narrate-workdir <dir>` | Keep the prompts and raw responses. **Without it they are written to a temp dir and deleted when the run ends**, so replay is impossible after the fact. |
+| `--narrate-timeout 20m` | Raise the per-request budget on a large repo (default 10m). |
+| `--landmarks 10` | Propose more landmark stops (default 6). |
+| `--audience "new backend engineers"` | Recorded in the frontmatter and given to the assistant as context. |
+
+If narration produces nothing, the command **exits non-zero** and says how many
+stops still carry `TODO`. The skeleton is still written, so nothing is lost —
+but a failed narration never looks like a successful draft.
 
 The division of labour is the point. **tds decides what to point at; the model
 only writes about it.** Anchors are chosen from the map before the assistant is
@@ -198,18 +233,31 @@ Narrated prose is a *first draft*, not a finished tour — the model can write
 something fluent and wrong. The generated file says so at the top. Read it before
 you share it.
 
-Each run saves the assistant's raw response, and stop ids are derived from
-anchors, so a narrated draft is **reproducible without re-spending tokens**:
+### Reproduce a narrated draft without re-spending tokens
+
+Stop ids are derived from anchors, so a saved response can be replayed against a
+regenerated skeleton. This needs the responses to still exist — which is why the
+run above passes `--narrate-workdir`:
 
 ```sh
+tds draft . --narrate --narrate-workdir .tds/narrate   # keeps the responses
+ls .tds/narrate/                                       # narrate-1-001-out.json, ...
+
+# Later — no tmux, no assistant, no tokens:
 tds draft . --narrate-from .tds/narrate/narrate-1-001-out.json
 ```
 
 Useful for regenerating after you tweak the template, and for recovering a draft
 you overwrote. The saved response goes through the same validation gate as a
-live one.
+live one, so a stale or hand-edited file cannot smuggle anything in.
 
-A tour source file is Markdown with light directives:
+> Pass `--narrate-workdir` on any run you might want to replay. The default work
+> directory is temporary and is removed when the run finishes.
+
+### The tour source format
+
+A tour source file is Markdown with light directives — this is what `tds draft`
+emits and what you edit:
 
 ```markdown
 ---
@@ -252,7 +300,11 @@ mkdir -p "$WORK"
 tds map "$REPO" --out "$WORK/map"
 
 # 2. Draft -> $WORK/redmine.tour.md
-tds draft "$REPO" --map-dir "$WORK/map" --out "$WORK/redmine.tour.md"
+#    Add --narrate (plus --narrate-workdir, kept in $WORK) to have the
+#    assistant write the prose instead of leaving TODOs.
+tds draft "$REPO" \
+    --map-dir "$WORK/map" \
+    --out     "$WORK/redmine.tour.md"
 
 # 3. Curate the prose (this is the part only a human can do)
 $EDITOR "$WORK/redmine.tour.md"
