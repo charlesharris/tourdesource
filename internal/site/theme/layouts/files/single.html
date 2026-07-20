@@ -31,8 +31,13 @@
     </div>
   </section>
   <aside class="commentary">
+    {{/* Only claim to describe the file when something actually described it.
+         An empty panel under this heading promises commentary that does not
+         exist; saying nothing is the honest degradation. */}}
+    {{ with .Params.summary }}
     <h6>What this file is</h6>
-    <p class="card-body">{{ .Params.summary }}</p>
+    <p class="card-body">{{ . }}</p>
+    {{ end }}
 
     {{/* Analyzer findings for this file. Tool output, attributed — never
          presented as a verdict on the code. */}}

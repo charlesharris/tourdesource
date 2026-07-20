@@ -215,6 +215,7 @@ func writeTheme(dir string) error {
 // writeData emits data/*.json and one content page per source file.
 func writeData(in Input, dir string, opts Options) (*Result, error) {
 	subs, subsystemOf, derivation := DeriveSubsystems(in.Files, in.Symbols, in.Imports, in.Signals, in.Entrypoints)
+	applyNarration(subs, in.Narration)
 	refs := ReferenceCounts(in.Symbols, in.Imports)
 	importedBy := InvertImports(in.Imports)
 
@@ -335,6 +336,7 @@ func writeFilePages(
 			HeatPct:    heatByPath[f.Path].pct,
 			HeatValue:  heatByPath[f.Path].value,
 			Code:       src,
+			Summary:    in.narrationSummary(f.Path),
 		}
 
 		name := filepath.Join(filesDir, slugFor(f.Path)+".md")

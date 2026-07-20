@@ -210,14 +210,52 @@ on **your own subscription**, no API key — along with the source each stop
 anchors, and asks only for prose. On Redmine that fills all 19 stops in two
 requests, in about a minute.
 
+It also names and describes the **subsystems** on the architecture map. Those are
+grouped deterministically from directory role, so the assistant is only asked
+what each group is *for* — never which files belong to it or how big it is. A
+group it does not describe keeps the measured text.
+
 Useful flags:
 
 | Flag | Why |
 |---|---|
 | `--narrate-workdir <dir>` | Keep the prompts and raw responses. **Without it they are written to a temp dir and deleted when the run ends**, so replay is impossible after the fact. |
 | `--narrate-timeout 20m` | Raise the per-request budget on a large repo (default 10m). |
+| `--full-narration` | Also summarise the busiest files, for the explorer's "What this file is" panel. See the note below — this is the slow one. |
+| `--narrate-files 500` | How many files `--full-narration` describes, busiest first (default 250). |
 | `--landmarks 10` | Propose more landmark stops (default 6). |
 | `--audience "new backend engineers"` | Recorded in the frontmatter and given to the assistant as context. |
+
+### `--full-narration` is bounded on purpose
+
+Redmine's map holds 3,658 files and the assistant answers one request at a time,
+so describing every file is hours of wall clock and millions of tokens. Two
+things keep it usable:
+
+- Files are ranked by **churn** and capped at `--narrate-files`. What a team
+  keeps changing is what a newcomer opens first, so the budget is spent where
+  readers actually go.
+- Every summary is cached against the file's **content hash**, and the sidecar is
+  written after each request. Re-drafting an unchanged repo asks for nothing;
+  changing one file costs one request; and a run interrupted at hour two keeps
+  everything it already paid for.
+
+Subsystem naming is not gated behind this flag — it is a handful of requests
+even on a large repository, so plain `--narrate` does it.
+
+### Where narration is kept
+
+Subsystem and file prose describe the codebase rather than the walk through it,
+so they do not live in the `.tour.md`. They go to `.tds/narration.json`, which
+`tds build` reads. It is plain JSON, so a description you disagree with is fixed
+in a text editor rather than by re-running the assistant.
+
+`.tds/` is generated output and is ignored by default, narration included. Worth
+knowing: unlike the map, this file cannot be rebuilt from the repository without
+spending tokens again, so deleting `.tds/` discards it. If a long
+`--full-narration` run is worth keeping, copy it somewhere before you wipe the
+directory — whether it belongs in version control is a call for the project
+you are touring, not one tds makes for you.
 
 If narration produces nothing, the command **exits non-zero** and says how many
 stops still carry `TODO`. The skeleton is still written, so nothing is lost —

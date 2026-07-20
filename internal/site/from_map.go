@@ -9,6 +9,7 @@ import (
 
 	"github.com/charlesharris/tourdesource/internal/anchor"
 	"github.com/charlesharris/tourdesource/internal/manifest"
+	"github.com/charlesharris/tourdesource/internal/narration"
 	"github.com/charlesharris/tourdesource/internal/repofs"
 	"github.com/charlesharris/tourdesource/internal/store"
 	"github.com/charlesharris/tourdesource/internal/tour"
@@ -133,6 +134,16 @@ func LoadInput(opts FromMapOptions) (Input, error) {
 		warnf("%d minified file(s) have pages without code", minified)
 	}
 
+	// Narration is optional: a repository that has never been narrated still
+	// builds, its subsystems just describe themselves by what was measured.
+	// A malformed sidecar is worth a warning rather than a failed build — the
+	// site is still correct without it.
+	narrated, err := narration.Load(narration.Path(filepath.Dir(mapPath)))
+	if err != nil {
+		warnf("not using narration (%v); subsystems will show what tds measured", err)
+		narrated = nil
+	}
+
 	return Input{
 		Manifest:    m,
 		Files:       files,
@@ -145,6 +156,7 @@ func LoadInput(opts FromMapOptions) (Input, error) {
 		ProjectName: filepath.Base(repo),
 		Blurb:       blurbFrom(m),
 		Commit:      commit,
+		Narration:   narrated,
 	}, nil
 }
 

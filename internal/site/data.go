@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/charlesharris/tourdesource/internal/manifest"
+	"github.com/charlesharris/tourdesource/internal/narration"
 	"github.com/charlesharris/tourdesource/internal/protocol"
 	"github.com/charlesharris/tourdesource/internal/store"
 	"github.com/charlesharris/tourdesource/internal/view"
@@ -236,6 +237,22 @@ type Input struct {
 	ProjectName string
 	Blurb       string
 	Commit      string
+	// Narration is assistant-written prose from `tds draft`: subsystem names and
+	// descriptions, and per-file summaries. Nil when the repository has never
+	// been narrated, which is the ordinary case — every view degrades to what
+	// tds measured rather than to nothing.
+	Narration *narration.Doc
+}
+
+// narrationSummary returns the assistant's summary for a file, or "" when the
+// repository has not been narrated or this file was not among those described.
+// An empty summary makes the file page omit its commentary panel rather than
+// render a heading over nothing.
+func (in Input) narrationSummary(path string) string {
+	if in.Narration == nil {
+		return ""
+	}
+	return in.Narration.Summary(path)
 }
 
 // buildManifest assembles data/manifest.json.

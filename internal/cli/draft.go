@@ -13,6 +13,8 @@ func newDraftCmd() *cobra.Command {
 	var repo, mapDir, out, audience, workDir string
 	var landmarks int
 	var doNarrate bool
+	var fullNarration bool
+	var narrateFiles int
 	var narrateFrom string
 	var narrateTimeout time.Duration
 
@@ -35,12 +37,14 @@ Run ` + "`tds map`" + ` first to produce the map.`,
 			}
 
 			var narrateOpts *draft.NarrateOptions
-			if doNarrate || narrateFrom != "" {
+			if doNarrate || fullNarration || narrateFrom != "" {
 				narrateOpts = &draft.NarrateOptions{
-					Root:     repo,
-					WorkDir:  workDir,
-					Timeout:  narrateTimeout,
-					FromFile: narrateFrom,
+					Root:          repo,
+					WorkDir:       workDir,
+					Timeout:       narrateTimeout,
+					FromFile:      narrateFrom,
+					FullNarration: fullNarration,
+					MaxFiles:      narrateFiles,
 				}
 			}
 
@@ -88,6 +92,10 @@ Run ` + "`tds map`" + ` first to produce the map.`,
 		"where narration prompt/answer files are written (default: a temp dir)")
 	cmd.Flags().DurationVar(&narrateTimeout, "narrate-timeout", 10*time.Minute,
 		"per-request budget for narration")
+	cmd.Flags().BoolVar(&fullNarration, "full-narration", false,
+		"also summarise the busiest files for the explorer (implies --narrate; hours on a large repo, cached by content hash)")
+	cmd.Flags().IntVar(&narrateFiles, "narrate-files", 250,
+		"how many files --full-narration describes, busiest first")
 	return cmd
 }
 

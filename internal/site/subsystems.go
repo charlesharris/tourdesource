@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/charlesharris/tourdesource/internal/lens"
+	"github.com/charlesharris/tourdesource/internal/narration"
 	"github.com/charlesharris/tourdesource/internal/protocol"
 	"github.com/charlesharris/tourdesource/internal/store"
 )
@@ -278,14 +279,40 @@ func DeriveSubsystems(
 	return out, subsystemOf, derivation
 }
 
-// describeSubsystem is the placeholder description used until the narrate pass
-// replaces it. It states only what tds actually measured — inventing a purpose
-// here is exactly the kind of confident-but-wrong text the draft avoids.
-// It must not name a command that would not help: `--narrate` writes tour-stop
-// prose and does not touch subsystems (TDS-59 is the pass that will).
+// describeSubsystem is the description used until the narrate pass replaces it.
+// It states only what tds actually measured — inventing a purpose here is
+// exactly the kind of confident-but-wrong text the draft avoids.
+//
+// Unlike the earlier version of this string (TDS-70), it can now name a command
+// that would actually change it: `tds draft --narrate` runs the subsystem pass
+// and writes real descriptions to the narration sidecar.
 func describeSubsystem(name string, files, commits int) string {
-	return fmt.Sprintf("%d files, %s commits. Grouped by directory role; not yet described.",
+	return fmt.Sprintf("%d files, %s commits. Grouped by directory role; run `tds draft --narrate` to describe it.",
 		files, humanCount(commits))
+}
+
+// applyNarration overlays assistant-written names and descriptions onto the
+// derived groups. Everything measured — the grouping, the column, the counts,
+// the key files — is left exactly as derived: narration supplies words, never
+// facts. A group the sidecar does not mention keeps its measured description,
+// so a partial or interrupted narration run degrades group by group.
+func applyNarration(subs []Subsystem, doc *narration.Doc) {
+	if doc == nil {
+		return
+	}
+	for i := range subs {
+		n, ok := doc.Subsystems[subs[i].ID]
+		if !ok {
+			continue
+		}
+		if n.Desc != "" {
+			subs[i].Desc = n.Desc
+		}
+		// An empty name means the assistant found the mechanical one adequate.
+		if n.Name != "" {
+			subs[i].Name = n.Name
+		}
+	}
 }
 
 // ReferenceCounts approximates how often each symbol is referenced, by counting

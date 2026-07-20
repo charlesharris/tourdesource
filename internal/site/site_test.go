@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charlesharris/tourdesource/internal/manifest"
+	"github.com/charlesharris/tourdesource/internal/narration"
 	"github.com/charlesharris/tourdesource/internal/protocol"
 	"github.com/charlesharris/tourdesource/internal/store"
 )
@@ -268,13 +269,82 @@ func TestSubsystemDescriptionsClaimNothing(t *testing.T) {
 	if !strings.Contains(desc, "57 files") || !strings.Contains(desc, "3,861 commits") {
 		t.Errorf("description should state what was measured, got %q", desc)
 	}
-	if !strings.Contains(desc, "not yet described") {
-		t.Errorf("description should admit it is a placeholder, got %q", desc)
+	// The description must still not claim to know what the group is FOR.
+	// Stating the measured size and how the grouping was arrived at is the
+	// whole of what tds knows before an assistant has looked at it.
+	if !strings.Contains(desc, "Grouped by directory role") {
+		t.Errorf("description should say how the group was derived, got %q", desc)
 	}
-	// TDS-70: it used to send the reader to `tds draft --narrate`, which only
-	// writes tour-stop prose and leaves subsystems exactly as they were.
-	if strings.Contains(desc, "--narrate") {
-		t.Errorf("description must not name a command that would not change it, got %q", desc)
+	// TDS-70 removed this pointer because `--narrate` did not touch subsystems.
+	// TDS-59 made it true: the subsystem pass now runs under --narrate and
+	// writes real descriptions, so naming the command is honest again.
+	if !strings.Contains(desc, "tds draft --narrate") {
+		t.Errorf("description should name the command that would describe it, got %q", desc)
+	}
+}
+
+// TestNarrationOverlaysWordsNotFacts pins the boundary the subsystem pass must
+// respect: an assistant supplies the name and the description, and nothing
+// else. If it could revise counts, columns or grouping, the architecture map
+// would start reporting things nobody measured.
+func TestNarrationOverlaysWordsNotFacts(t *testing.T) {
+	subs := []Subsystem{{
+		ID: "app-models", Name: "app/models", Column: ColDomain,
+		Files: 91, Commits: 5738, Churn: 42,
+		Entry: "app/models/anonymous_user.rb", Desc: "91 files, 5,738 commits.",
+		KeyFiles: []string{"app/models/issue.rb"},
+	}}
+	applyNarration(subs, &narration.Doc{
+		Subsystems: map[string]narration.Subsystem{
+			"app-models": {Name: "Domain models", Desc: "The issue tracker's core entities."},
+		},
+	})
+
+	got := subs[0]
+	if got.Name != "Domain models" {
+		t.Errorf("name = %q, want the narrated one", got.Name)
+	}
+	if got.Desc != "The issue tracker's core entities." {
+		t.Errorf("desc = %q, want the narrated one", got.Desc)
+	}
+	if got.Files != 91 || got.Commits != 5738 || got.Churn != 42 {
+		t.Errorf("narration changed measured counts: %+v", got)
+	}
+	if got.Column != ColDomain || got.Entry != "app/models/anonymous_user.rb" {
+		t.Errorf("narration changed derived placement: %+v", got)
+	}
+}
+
+// TestNarrationAbsentKeepsMeasuredText covers the ordinary case — a repository
+// nobody has narrated — and the partial one, where a run described some groups
+// and not others. Both must degrade to what tds measured, per group.
+func TestNarrationAbsentKeepsMeasuredText(t *testing.T) {
+	base := []Subsystem{
+		{ID: "a", Name: "app/models", Desc: "measured a"},
+		{ID: "b", Name: "lib", Desc: "measured b"},
+	}
+
+	subs := append([]Subsystem(nil), base...)
+	applyNarration(subs, nil)
+	if subs[0].Desc != "measured a" || subs[1].Desc != "measured b" {
+		t.Errorf("a nil sidecar should change nothing, got %+v", subs)
+	}
+
+	subs = append([]Subsystem(nil), base...)
+	applyNarration(subs, &narration.Doc{
+		Subsystems: map[string]narration.Subsystem{
+			"a": {Desc: "described a"},
+		},
+	})
+	if subs[0].Desc != "described a" {
+		t.Errorf("described group should take the narration, got %q", subs[0].Desc)
+	}
+	if subs[1].Desc != "measured b" {
+		t.Errorf("undescribed group should keep its measured text, got %q", subs[1].Desc)
+	}
+	// An empty name means "the mechanical one was fine" and must not blank it.
+	if subs[0].Name != "app/models" {
+		t.Errorf("empty narrated name should keep the mechanical one, got %q", subs[0].Name)
 	}
 }
 

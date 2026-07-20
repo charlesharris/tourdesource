@@ -49,6 +49,18 @@ type NarrateOptions struct {
 	// path be debugged without spending tokens.
 	FromFile string
 
+	// FullNarration additionally writes a summary for each of the busiest
+	// files, shown in the explorer. Subsystem naming happens under plain
+	// --narrate because it is a handful of requests; this is the pass that can
+	// run for hours on a large repository, so it is opted into separately.
+	FullNarration bool
+	// MaxFiles caps how many files FullNarration describes, busiest first. A
+	// large repository has thousands of files and the assistant is driven one
+	// request at a time, so an uncapped pass is not a feature anyone can wait
+	// for. Summaries are cached by content hash, so raising this later only
+	// costs the difference.
+	MaxFiles int
+
 	// Assistant injects a stand-in; nil starts Claude in tmux.
 	Assistant orchestration.Assistant
 
@@ -64,6 +76,9 @@ func (o NarrateOptions) withDefaults() NarrateOptions {
 	}
 	if o.MaxExcerptLines <= 0 {
 		o.MaxExcerptLines = 120
+	}
+	if o.MaxFiles <= 0 {
+		o.MaxFiles = 250
 	}
 	if o.Logf == nil {
 		o.Logf = func(string, ...any) {}

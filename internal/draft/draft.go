@@ -45,6 +45,12 @@ type Result struct {
 	// NarrateRequested records that --narrate was asked for, so the caller can
 	// distinguish "narrated nothing" from "never tried".
 	NarrateRequested bool
+	// Subsystems counts architecture groups the assistant described. These do
+	// not live in the tour file — they go to the narration sidecar that
+	// `tds build` reads.
+	Subsystems int
+	// Summaries counts files the assistant described, under --full-narration.
+	Summaries int
 }
 
 // Generate assembles context from the map, plans a tour, optionally narrates it,
@@ -114,12 +120,49 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 
 	res.NarrateRequested = opts.Narrate != nil
 	if opts.Narrate != nil {
-		n, err := narrate(ctx, plan, dctx, *opts.Narrate, logf, warnf)
+		nopts := opts.Narrate.withDefaults()
+		if nopts.Root == "" {
+			nopts.Root = dctx.Root
+		}
+		nopts.Logf = logf
+		if nopts.WorkDir == "" {
+			dir, err := os.MkdirTemp("", "tds-narrate-*")
+			if err != nil {
+				return nil, err
+			}
+			defer os.RemoveAll(dir)
+			nopts.WorkDir = dir
+		}
+
+		// One assistant serves every pass. Starting tmux is the slowest part of
+		// a narration run, and the stop, subsystem and file passes have no
+		// reason to each pay for it.
+		if nopts.Assistant == nil && nopts.FromFile == "" {
+			a, err := assistantFor(ctx, nopts)
+			if err != nil {
+				return nil, err
+			}
+			defer a.Close()
+			nopts.Assistant = a
+		}
+
+		n, err := narrate(ctx, plan, dctx, nopts, logf, warnf)
 		if err != nil {
 			return nil, fmt.Errorf("narrating: %w", err)
 		}
 		res.Narrated = n
 		plan.Narrated = n > 0
+
+		// Subsystem and file prose do not belong in the tour file — they
+		// describe the codebase, not the walk through it — so they go to a
+		// sidecar `tds build` reads. Replay (--narrate-from) is a stop-only
+		// path: it restores a saved tour, and has no assistant to ask.
+		if nopts.Assistant != nil {
+			if err := narrateSidecar(ctx, st, dctx, mapDir, nopts, res, logf, warnf); err != nil {
+				// The tour itself is already narrated and worth writing.
+				warnf("subsystem and file narration failed, leaving them as measured: %v", err)
+			}
+		}
 	}
 
 	out := opts.Out

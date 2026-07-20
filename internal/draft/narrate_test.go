@@ -17,13 +17,41 @@ import (
 // batching, decoding, the validation gate, merging — is exercised end to end
 // without tmux and without spending tokens.
 type scriptedAssistant struct {
-	prompts []string
+	// prompts holds stop-narration prompts only. The subsystem and file passes
+	// are recorded separately so that a test asserting on how stops were
+	// batched is not perturbed by requests it was never about.
+	prompts          []string
+	subsystemPrompts []string
+	filePrompts      []string
 	// reply builds the response for one request, given the stop ids in it.
-	reply  func(promptIDs []string) string
-	closed bool
+	reply func(promptIDs []string) string
+	// replySubsystems and replyFiles answer the sidecar passes. Nil means
+	// "decline": a well-formed empty response, which the gate treats as nothing
+	// to merge. That keeps every stop-focused test unaffected by passes it does
+	// not care about, while still exercising the decode path.
+	replySubsystems func(ids []string) string
+	replyFiles      func(paths []string) string
+	closed          bool
 }
 
 func (s *scriptedAssistant) Ask(_ context.Context, req orchestration.Request) ([]byte, error) {
+	// Dispatch on what the prompt actually asked for rather than on call order:
+	// passes may be added or reordered, and a positional script would break
+	// every time they were.
+	if ids := markedIDsIn(req.Prompt, "### subsystem id: "); len(ids) > 0 {
+		s.subsystemPrompts = append(s.subsystemPrompts, req.Prompt)
+		if s.replySubsystems == nil {
+			return []byte(`{"subsystems":{}}`), nil
+		}
+		return []byte(s.replySubsystems(ids)), nil
+	}
+	if paths := filePathsIn(req.Prompt); len(paths) > 0 {
+		s.filePrompts = append(s.filePrompts, req.Prompt)
+		if s.replyFiles == nil {
+			return []byte(`{"files":{}}`), nil
+		}
+		return []byte(s.replyFiles(paths)), nil
+	}
 	s.prompts = append(s.prompts, req.Prompt)
 	return []byte(s.reply(stopIDsIn(req.Prompt))), nil
 }
@@ -33,9 +61,29 @@ func (s *scriptedAssistant) Close() error { s.closed = true; return nil }
 // stopIDsIn recovers the ids a prompt asked about, so a stand-in can answer them
 // the way a real assistant would.
 func stopIDsIn(prompt string) []string {
+	return markedIDsIn(prompt, "### stop id: ")
+}
+
+// markedIDsIn pulls the ids out of a prompt's per-item headings.
+func markedIDsIn(prompt, marker string) []string {
 	var out []string
 	for _, line := range strings.Split(prompt, "\n") {
-		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "### stop id: "); ok {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), marker); ok {
+			out = append(out, strings.TrimSpace(rest))
+		}
+	}
+	return out
+}
+
+// filePathsIn recovers the paths a file-summary prompt asked about. Those
+// headings carry the path directly rather than an "id:" label.
+func filePathsIn(prompt string) []string {
+	if !strings.Contains(prompt, "one-paragraph summaries of source files") {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(prompt, "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "### "); ok {
 			out = append(out, strings.TrimSpace(rest))
 		}
 	}
