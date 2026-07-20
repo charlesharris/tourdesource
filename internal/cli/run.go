@@ -29,11 +29,13 @@ import (
 	"github.com/charlesharris/tourdesource/internal/analyzer"
 	"github.com/charlesharris/tourdesource/internal/draft"
 	"github.com/charlesharris/tourdesource/internal/mapper"
+	"github.com/charlesharris/tourdesource/internal/repofs"
+	"github.com/charlesharris/tourdesource/internal/tour"
 )
 
 func newRunCmd() *cobra.Command {
 	var repo, outDir, audience, tourPath, narrateWorkdir string
-	var noNarrate, redraft, serve bool
+	var noNarrate, redraft, keepTour, serve bool
 	var narrateFiles, landmarks, port int
 	var narrateTimeout time.Duration
 
@@ -46,9 +48,12 @@ It runs the whole pipeline: ` + "`map`" + ` to index the code, ` + "`analyze`" +
 findings from whatever language tooling is installed, ` + "`draft`" + ` to plan and
 narrate a tour, and ` + "`build`" + ` to render the site.
 
-Re-running is safe. The map, the findings and the site are always refreshed, but
-the tour is written only if one does not exist yet — your curation of it is never
-overwritten. Use --redraft when you do want it regenerated.
+Re-running is safe and cheap. The map, the findings and the site are always
+refreshed. The tour is regenerated only when there isn't one yet, or when the
+repository has moved past the commit it describes — so a run that changes
+nothing costs no tokens, and a run after new commits gets prose that matches the
+code. --redraft forces regeneration; --keep-tour reuses the tour unchanged even
+when it has gone stale.
 
 Narration is on by default and needs tmux and Claude Code on PATH; it runs on
 your own subscription. It writes the tour's prose, names the subsystems on the
@@ -73,6 +78,7 @@ Requires Hugo extended >= 0.128 on PATH for the build stage.`,
 				NarrateTimeout: narrateTimeout,
 				Landmarks:      landmarks,
 				Redraft:        redraft,
+				KeepTour:       keepTour,
 				Serve:          serve,
 				Port:           port,
 			})
@@ -94,7 +100,9 @@ Requires Hugo extended >= 0.128 on PATH for the build stage.`,
 	cmd.Flags().IntVar(&landmarks, "landmarks", 6, "how many landmark stops to propose")
 	cmd.Flags().StringVar(&audience, "audience", "", "who the tour is for (frontmatter)")
 	cmd.Flags().BoolVar(&redraft, "redraft", false,
-		"regenerate the tour even if one exists — DISCARDS any curation of it")
+		"regenerate the tour even if it is current — DISCARDS any curation of it")
+	cmd.Flags().BoolVar(&keepTour, "keep-tour", false,
+		"reuse the existing tour even if the repository has moved past the commit it describes")
 	cmd.Flags().BoolVar(&serve, "serve", false, "serve the finished site over HTTP")
 	cmd.Flags().IntVar(&port, "port", 8000, "port for --serve")
 	return cmd
@@ -111,6 +119,7 @@ type runOptions struct {
 	NarrateTimeout time.Duration
 	Landmarks      int
 	Redraft        bool
+	KeepTour       bool
 	Serve          bool
 	Port           int
 }
@@ -141,14 +150,26 @@ func runPipeline(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return err
 	}
-	willDraft := !existing || opts.Redraft
+	// An existing tour is reused only while it still describes the commit it was
+	// written against. Prose is anchored to code, so once the repository moves
+	// on, reusing it means serving a description of code that is no longer
+	// there — silently, which is the worst way to be wrong. Re-drafting on a
+	// moved commit keeps the site honest without re-spending tokens on runs
+	// where nothing changed.
+	stale, staleReason := tourIsStale(root, tourPath, existing)
+	willDraft := !existing || opts.Redraft || (stale && !opts.KeepTour)
 	willNarrate := opts.Narrate && willDraft
 
-	if existing && !opts.Redraft {
-		logf("using the existing tour at %s (pass --redraft to regenerate it)", tourPath)
-	}
-	if existing && opts.Redraft {
+	switch {
+	case existing && opts.Redraft:
 		warnf("--redraft will overwrite %s, discarding any edits you have made to it", tourPath)
+	case existing && stale && opts.KeepTour:
+		warnf("%s; --keep-tour was given, so the site will describe code that has moved on", staleReason)
+	case existing && stale:
+		logf("%s — re-drafting it (pass --keep-tour to reuse it unchanged)", staleReason)
+	case existing:
+		logf("the tour at %s is current for this commit, reusing it "+
+			"(pass --redraft to regenerate anyway)", tourPath)
 	}
 	if opts.Narrate && !willDraft {
 		logf("narration skipped: the tour already has its prose")
@@ -281,6 +302,42 @@ func resolveTour(explicit, mapDir string) (path string, exists bool, err error) 
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// tourIsStale reports whether an existing tour was written against a different
+// commit than the repository is on now, and says so in words the caller can
+// print.
+//
+// It is deliberately conservative: anything it cannot determine — an unparseable
+// tour, a repository with no git, a tour with no commit recorded — counts as
+// not stale. Re-drafting spends tokens and discards whatever is in the file, so
+// uncertainty should not trigger it. The commit is the only signal used; a tour
+// whose commit still matches is left alone even if its prose is poor, because
+// that is a judgement for the author rather than for a freshness check.
+func tourIsStale(root, tourPath string, existing bool) (bool, string) {
+	if !existing {
+		return false, ""
+	}
+	parsed, err := tour.ParseFile(tourPath)
+	if err != nil || parsed.Commit == "" {
+		return false, ""
+	}
+	head, err := repofs.Resolve(root, "auto")
+	if err != nil || head == "" {
+		return false, ""
+	}
+	if parsed.Commit == head {
+		return false, ""
+	}
+	return true, fmt.Sprintf("the tour describes commit %s but the repository is at %s",
+		shortSHA(parsed.Commit), shortSHA(head))
+}
+
+func shortSHA(s string) string {
+	if len(s) > 12 {
+		return s[:12]
+	}
+	return s
 }
 
 // checkNarrationTools fails early and actionably. Narration is the one stage

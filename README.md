@@ -135,14 +135,30 @@ That maps the repo, runs whatever linters you have installed, drafts and narrate
 a tour, and renders the site. On a large repository expect a handful of minutes,
 most of it narration.
 
-**Re-running is safe.** `tds run` refreshes the map, the findings and the site
-every time, but writes the tour only if there isn't one — so the curation you do
-in the next step is never overwritten. `--redraft` when you do want it thrown
-away and regenerated.
+**Re-running is safe and cheap.** `tds run` refreshes the map, the findings and
+the site every time. The tour is regenerated only when there isn't one yet, or
+when the repository has moved past the commit it describes:
+
+| Situation | What happens | Tokens |
+|---|---|---|
+| No tour yet | Draft and narrate | yes |
+| Tour matches HEAD | Reuse it, rebuild the site | none |
+| Repo moved on | Re-draft and re-narrate | yes |
+
+That means a run after new commits gets prose matching the code, and a run that
+changes nothing costs nothing. `--redraft` forces regeneration; `--keep-tour`
+reuses the tour untouched even when it has gone stale.
+
+The commit is the only staleness signal, and it is deliberately conservative —
+a tour tds cannot parse, a repo without git, or a tour recording no commit all
+count as *not* stale, because re-drafting discards the file and spends tokens.
+
+If you do want to hand-edit the prose, do it and re-run at the same commit — your
+edits are kept and the site rebuilds from them:
 
 ```sh
-$EDITOR .tds/my-project.tour.md  # curate — the part only a human can do
-tds run --serve                  # rebuild the site from your edits
+$EDITOR .tds/my-project.tour.md  # optional — narration already wrote it
+tds run --serve                  # rebuilds from your edits, no tokens
 ```
 
 Narration needs **tmux** and **Claude Code** on your `PATH` and runs on your own
